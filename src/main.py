@@ -1,4 +1,4 @@
-from shopy import ExtractFilesInfo, StoreFiles, path_config
+from shopy import CalcMetrics, ExtractFilesInfo, StoreFiles, path_config
 
 
 def main():
@@ -8,6 +8,9 @@ def main():
     sf = StoreFiles()
     sf.save_deleted_file()
     sf.save_existing_file()
+    
+    cm = CalcMetrics()
+    cm.main()
 
 
 if __name__ == "__main__":
