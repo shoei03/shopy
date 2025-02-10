@@ -6,7 +6,8 @@ def main():
     ef.main(isDeleted=True)
 
     sf = StoreFiles()
-    sf.open_file()
+    sf.save_deleted_file()
+    sf.save_existing_file()
 
 
 if __name__ == "__main__":
