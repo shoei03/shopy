@@ -19,6 +19,7 @@ class PathConfig:
     EXISTING_FILES_DATA_DIR:  Path = ROOT_DIR / "data" / REPO_NAME / "existing_files"
     EXISTING_FILES:           Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "files"
     EXISTING_FILES_INFO_CSV:  Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "existing_files_info.csv"
+    CENTRALITY_DATA_DIR:      Path = ROOT_DIR / "data" / REPO_NAME / "centrality"
     
 
 
