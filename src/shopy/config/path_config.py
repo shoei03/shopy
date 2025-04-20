@@ -4,8 +4,9 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class PathConfig:
-    ORGANIZATION: str = "iluwatar"
-    REPO_NAME:    str = "java-design-patterns"
+    ORGANIZATION:   str = "spring-projects"
+    REPO_NAME:      str = "spring-framework"
+    PACKAGE_PREFIX: str = "org.springframework"
     
     ROOT_DIR:     Path = Path(__file__).parents[3]
     PROJECTS_DIR: Path = ROOT_DIR.parent / "projects"
@@ -20,6 +21,7 @@ class PathConfig:
     EXISTING_FILES:           Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "files"
     EXISTING_FILES_INFO_CSV:  Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "existing_files_info.csv"
     CENTRALITY_DATA_DIR:      Path = ROOT_DIR / "data" / REPO_NAME / "centrality"
+    STABILITY_DATA_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "stability"
     
 
 
