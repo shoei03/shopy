@@ -65,7 +65,6 @@ class ExtractFilesInfo:
                     {"Existing File Path": line, "Is Deleted": False}
                 )
 
-        print("残存ファイルの情報を取得しました。")
         return pd.DataFrame(java_files_info)
 
     def main(self, isDeleted=False):
