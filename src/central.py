@@ -1,4 +1,5 @@
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -15,47 +16,70 @@ class CalcCentrality:
         self.shell_command = ShellCommand()
 
     def build_dependency_graph(
-        self, java_files: list[Path], max_files: int = 20000
+        self, file_paths: list[Path], max_files: int = 20000
     ) -> tuple[nx.DiGraph, dict[Path, str]]:
+        """ファイルの依存関係グラフを構築する。
+
+        Args:
+            file_paths (list[Path]): ファイルのリスト
+            max_files (int, optional): ファイル数の制限. Defaults to 20000.
+
+        Returns:
+            tuple[nx.DiGraph, dict[Path, str]]: ファイルパスとパッケージ名のマッピング
+        """
         G = nx.DiGraph()
         get_name = GetName()
-        file_to_fqn = {}
+        filepath_to_package_name = {}
 
         # データ数が多い場合はサンプリング
         sampled_files = (
-            java_files[:max_files] if len(java_files) > max_files else java_files
+            file_paths[:max_files] if len(file_paths) > max_files else file_paths
         )
 
         # パッケージ名を取得してノードを追加
-        for file in tqdm(sampled_files, desc="FQN抽出", leave=False):
+        for file in tqdm(
+            sampled_files, desc="FQN抽出", leave=False, dynamic_ncols=True
+        ):
             fqn = get_name.get_fqn(file, base_package_prefix=path_config.PACKAGE_PREFIX)
             if fqn:
-                file_to_fqn[file] = fqn
+                filepath_to_package_name[file] = fqn
                 G.add_node(fqn)
 
         # import文を取得してエッジを追加
         for file, src_fqn in tqdm(
-            file_to_fqn.items(), desc="依存関係解析", leave=False
+            filepath_to_package_name.items(),
+            desc="依存関係解析",
+            leave=False,
+            dynamic_ncols=True,
         ):
             for imp in get_name.extract_imports(file):
                 if imp.startswith(path_config.PACKAGE_PREFIX):
                     G.add_edge(src_fqn, imp)
 
-        return G, file_to_fqn
+        return G, filepath_to_package_name
 
     def analyze_centrality_from_df(
         self,
         file_df: pd.DataFrame,
         cwd: Path,
         max_files: int = 2000,
-        commit_date: str = "",
+        commit_date: datetime = "",
         target_file_path: str = "",
     ) -> None:
-        java_files: list[Path] = [
+        """ファイルの依存関係を解析し、中心性スコアを計算する。
+
+        Args:
+            file_df (pd.DataFrame): ファイル情報のDataFrame
+            cwd (Path): リポジトリのカレントディレクトリ
+            max_files (int, optional): ファイル数の制限 Defaults to 2000.
+            commit_date (datetime, optional): コミット日時 Defaults to "".
+            target_file_path (str, optional): 着目するファイル Defaults to "".
+        """
+        file_paths: list[Path] = [
             cwd / Path(f) for f in file_df["Existing File Path"].tolist()
         ]
         graph, file_to_fqn = self.build_dependency_graph(
-            java_files, max_files=max_files
+            file_paths, max_files=max_files
         )
         centrality = nx.pagerank(graph)
 
@@ -75,12 +99,88 @@ class CalcCentrality:
         # 保存先ディレクトリを確保
         target_file_path = target_file_path.replace("/", "_")
         output_dir = Path(
-            path_config.CENTRALITY_DATA_DIR / target_file_path / commit_date
+            path_config.CENTRALITY_DATA_DIR / target_file_path / str(commit_date)
         )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # CSV保存
         centrality_df.to_csv(output_dir / "centrality_scores.csv", index=False)
+
+    def filter_metadata_monthly(
+        self, commit_hashes: list[str], commit_dates: list[datetime]
+    ) -> list[tuple[str, datetime]]:
+        """1ヶ月ごとにコミットをフィルタリングする。
+
+        Args:
+            commit_hashes (list[str]): コミットハッシュのリスト
+            commit_dates (list[datetime]): コミット日時のリスト
+
+        Returns:
+            list[tuple[str, datetime]]: フィルタリングされたコミットハッシュと日時のリスト
+        """
+        if (
+            not commit_dates
+            or not commit_hashes
+            or len(commit_dates) != len(commit_hashes)
+        ):
+            return []
+
+        selected_indices: list[int] = [0]  # 最初のインデックスは常に含める
+        start_date = commit_dates[0]
+        end_date = commit_dates[-1]
+
+        current_target = start_date + timedelta(days=30)
+        idx = 1
+
+        while current_target < end_date and idx < len(commit_dates):
+            while idx < len(commit_dates) and commit_dates[idx] < current_target:
+                idx += 1
+            if idx < len(commit_dates):
+                selected_indices.append(idx)
+            current_target += timedelta(days=30)
+
+        if selected_indices[-1] != len(commit_dates) - 1:
+            selected_indices.append(len(commit_dates) - 1)
+
+        # インデックスを使って分離リストに変換
+        filtered_hashes: list[str] = [commit_hashes[i] for i in selected_indices]
+        filtered_dates: list[datetime] = [commit_dates[i] for i in selected_indices]
+
+        return filtered_hashes, filtered_dates
+
+    def extract_commit_metadata(
+        self, file_path: Path
+    ) -> tuple[list[str], list[datetime]]:
+        """gitのメタデータを抽出する
+
+        Args:
+            file_path (Path): 対象とするファイルのパス
+
+        Returns:
+            tuple[list[str], list[datetime]]: コミットハッシュと日時のリスト
+        """
+        # Gitログからファイルのコミット情報（古い順）を取得
+        shell_command = ShellCommand()
+        raw_logs: list[str] = shell_command.run_cmd(
+            cmd=(
+                f"git log --all --full-history --reverse --pretty=format:%H,%aI -- {file_path}"
+            ),
+            cwd=path_config.REPO_DIR,
+        )
+
+        # コミットハッシュとISO形式の日時に分解
+        commit_metadata_pairs: list[tuple[str, str]] = [
+            log.split(",", 1) for log in raw_logs
+        ]
+
+        # ハッシュとUTC日時にそれぞれ分離して格納
+        commit_hashes: list[str] = [pair[0] for pair in commit_metadata_pairs]
+        commit_dates: list[datetime] = [
+            datetime.fromisoformat(pair[1]).astimezone(timezone.utc)
+            for pair in commit_metadata_pairs
+        ]
+
+        return commit_hashes, commit_dates
 
     def main(self) -> None:
         ef = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
@@ -90,31 +190,32 @@ class CalcCentrality:
             encoding="utf-8",
         )
 
-        # 1ファイルずつ処理
+        # --------------------------------
+        # 一旦ランダムに10件のファイルのみを処理
+        random_existing_files_list: list[Path] = list(
+            existing_files_df["Existing File Path"]
+        )
+        random.shuffle(random_existing_files_list)
+        random_existing_files_list = random_existing_files_list[:10]
+        # --------------------------------
         for file_path in tqdm(
-            existing_files_df["Existing File Path"], desc="ファイルを1件ずつ処理中"
+            random_existing_files_list,
+            desc="ファイルを1件ずつ処理中",
+            dynamic_ncols=True,
         ):
-            # ファイルのコミットID、日時を取得（古い順）
-            _commit_logs: list[str] = self.shell_command.run_cmd(
-                cmd=f"git log --all --full-history --reverse --pretty=format:%H,%aI -- {file_path}",
-                cwd=path_config.REPO_DIR,
+            commit_hashes, commit_dates = self.extract_commit_metadata(
+                file_path=file_path
             )
-            commit_hashes, commit_dates = zip(
-                *(log.split(",", 1) for log in _commit_logs)
+            filtered_hashes, filtered_dates = self.filter_metadata_monthly(
+                commit_hashes, commit_dates
             )
-            commit_hashes: list[str] = list(commit_hashes)
-            # コミット日時のタイムゾーンをUTCに変換
-            commit_dates: list[str] = [
-                datetime.fromisoformat(dt).astimezone(timezone.utc).isoformat()
-                for dt in list(commit_dates)
-            ]
 
-            for commit_hash, commit_date in zip(commit_hashes, commit_dates):
+            for commit_hash, commit_date in zip(filtered_hashes, filtered_dates):
                 # コミットIDの状態にリポジトリを戻す
                 self.shell_command.run_cmd(
                     cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
                 )
-
+                # 全ファイルを取得
                 file_df = ef.extract_java_file_info(
                     cwd=path_config.REPO_DIR, language="java"
                 )
