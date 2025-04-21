@@ -207,6 +207,7 @@ class CalcCentrality:
             cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
         )
 
+        # ファイルを取得
         existing_files_df = pd.read_csv(
             path_config.EXISTING_FILES_INFO_CSV,
             encoding="utf-8",
