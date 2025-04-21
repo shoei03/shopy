@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -24,18 +25,21 @@ class ExtractFilesInfo:
         """
         # 削除されたファイルの情報を取得
         lines = self.shell_command.run_cmd(
-            cmd="git log --diff-filter=D --name-status --pretty=format:%H|%as|%s",
+            cmd="git log --diff-filter=D --name-status --pretty=format:'%H|%aI|%s'",
             cwd=cwd,
         )
         deleted_files_info: list = []
         for line in lines:
             if "|" in line:
                 commit_id, commit_date, commit_message = line.split("|", 2)
+                utc_commit_date = datetime.fromisoformat(commit_date).astimezone(
+                    timezone.utc
+                )
             elif line.startswith("D\t") and line.endswith(f".{language}"):
                 deleted_files_info.append(
                     {
                         path_config.COMMIT_ID_COLUMNS: commit_id,
-                        path_config.COMMIT_DATE_COLUMNS: commit_date,
+                        path_config.COMMIT_DATE_COLUMNS: utc_commit_date,
                         path_config.COMMIT_MESSAGE_COLUMNS: commit_message,
                         # Remove the "D\t" prefix
                         path_config.DELETED_FILE_COLUMNS: line[2:],
