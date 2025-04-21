@@ -229,42 +229,46 @@ class CalcCentrality:
                         target_file_path=file_path,
                     )
                 else:
-                    print("Javaファイルが見つかりませんでした。")
+                    print("ファイルが見つかりませんでした。")
+
+            # 中心性の時系列変化を可視化
+            visualize_centrality = VisualizeCentrality()
+            visualize_centrality.main(target_file=file_path)
 
 
 class VisualizeCentrality:
-    def main(self, target_file_path: Path) -> None:
-        file_dir: Path = path_config.CENTRALITY_DATA_DIR / target_file_path
+    def main(self, target_file: Path) -> None:
+        file_path: Path = path_config.CENTRALITY_DATA_DIR / target_file
         data: list = []
 
-        # コミット日時のディレクトリを取得
-        commit_period: list[Path] = [p.name for p in file_dir.iterdir() if p.is_dir()]
-        sorted_commit_period: list[str] = sorted(
-            commit_period, key=datetime.fromisoformat
+        # コミット日時のリストを取得
+        commit_dates: list[Path] = [p.name for p in file_path.iterdir() if p.is_dir()]
+        sorted_commit_dates: list[str] = sorted(
+            commit_dates, key=datetime.fromisoformat
         )
 
         # 対象ファイルの中心性スコアを取得
-        for commit_time_dir in sorted_commit_period:
-            csv_path: Path = (
+        for sorted_commit_date in sorted_commit_dates:
+            output_dir: Path = (
                 path_config.CENTRALITY_DATA_DIR
-                / target_file_path
-                / commit_time_dir
+                / target_file
+                / sorted_commit_date
                 / "centrality_scores.csv"
             )
-            df = pd.read_csv(csv_path)
+            centrality_df = pd.read_csv(output_dir)
 
             # 対象ファイル名が含まれる行を抽出（部分一致）
-            target_row = df[
-                df["Existing File Path"].str.endswith(
-                    str(target_file_path).replace("_", "/")
+            target_row = centrality_df[
+                centrality_df["Existing File Path"].str.endswith(
+                    str(target_file).replace("_", "/")
                 )
             ]
 
             if not target_row.empty:
-                score = target_row["centrality_score"].iloc[0]
-                timestamp: str = commit_time_dir
+                centrality_score = target_row["centrality_score"].iloc[0]
+                commit_date: str = sorted_commit_date
 
-                data.append({"datetime": timestamp, "centrality": score})
+                data.append({"datetime": commit_date, "centrality": centrality_score})
 
         # ------- DataFrameへ変換・整形 -------
         df_plot = pd.DataFrame(data)
@@ -275,7 +279,7 @@ class VisualizeCentrality:
         plt.figure(figsize=(10, 6))
         sns.lineplot(data=df_plot, x="datetime", y="centrality", marker="o")
 
-        file_name: str = Path(str(target_file_path).replace("_", "/")).stem
+        file_name: str = Path(str(target_file).replace("_", "/")).stem
         plt.title(f"Time-series changes in the centrality score for {file_name} ")
         plt.xlabel("commit_time")
         plt.ylabel("centrality_score")
@@ -283,7 +287,7 @@ class VisualizeCentrality:
         plt.tight_layout()
         plt.savefig(
             path_config.CENTRALITY_DATA_DIR
-            / target_file_path
+            / target_file
             / "centrality_score_change.png",
             dpi=300,
         )
@@ -292,9 +296,3 @@ class VisualizeCentrality:
 if __name__ == "__main__":
     calc_centrality = CalcCentrality()
     calc_centrality.main()
-    # visualize_centrality = VisualizeCentrality()
-    # visualize_centrality.main(
-    #     target_file_path=Path(
-    #         "buildSrc_src_main_java_org_springframework_build_CheckstyleConventions.java"
-    #     )
-    # )
