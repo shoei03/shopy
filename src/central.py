@@ -188,9 +188,26 @@ class CalcCentrality:
 
         return commit_hashes, commit_dates
 
+    def get_last_commit_date(self, repo_path: Path, limit_year: str) -> str:
+        all_commits: list[str] = self.shell_command.run_cmd(
+            cmd=f"git log --before={limit_year}-01-01T00:00:00+00:00 --pretty=format:'%H|%aI' --reverse",
+            cwd=repo_path,
+        )
+        return all_commits[-1]
+
     def main(self) -> None:
         ef = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
 
+        # 2024年の最終コミット日時にリポジトリを戻す
+        last_commit_metadata: str = self.get_last_commit_date(
+            repo_path=path_config.REPO_DIR, limit_year="2025"
+        )
+        last_commit_hash: str = last_commit_metadata.split("|")[0]
+        self.shell_command.run_cmd(
+            cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
+        )
+
+        # ファイルを取得
         existing_files_df = pd.read_csv(
             path_config.EXISTING_FILES_INFO_CSV,
             encoding="utf-8",
