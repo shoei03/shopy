@@ -76,7 +76,7 @@ class CalcCentrality:
             target_file_path (str, optional): 着目するファイル Defaults to "".
         """
         file_paths: list[Path] = [
-            cwd / Path(f) for f in file_df["Existing File Path"].tolist()
+            cwd / Path(f) for f in file_df[path_config.EXISTING_FILE_COLUMNS].tolist()
         ]
         graph, file_to_fqn = self.build_dependency_graph(
             file_paths, max_files=max_files
@@ -84,17 +84,23 @@ class CalcCentrality:
         centrality = nx.pagerank(graph)
 
         # FQN列を追加
-        file_df["FQN"] = file_df["Existing File Path"].map(
-            lambda p: file_to_fqn.get(cwd / Path(p), "")
-        )
+        file_df[path_config.FULL_PACKAGE_COLUMNS] = file_df[
+            path_config.EXISTING_FILE_COLUMNS
+        ].map(lambda p: file_to_fqn.get(cwd / Path(p), ""))
 
         # 中心性スコア列を追加（FQNに対応するもののみ）
-        file_df["centrality_score"] = file_df["FQN"].map(centrality).fillna(0.0)
+        file_df[path_config.CENTRALITY_COLUMNS] = (
+            file_df[path_config.FULL_PACKAGE_COLUMNS].map(centrality).fillna(0.0)
+        )
 
         # 中心性スコア順にソート
         centrality_df = file_df[
-            ["centrality_score", "FQN", "Existing File Path"]
-        ].sort_values(by="centrality_score", ascending=False)
+            [
+                path_config.CENTRALITY_COLUMNS,
+                path_config.FULL_PACKAGE_COLUMNS,
+                path_config.EXISTING_FILE_COLUMNS,
+            ]
+        ].sort_values(by=path_config.CENTRALITY_COLUMNS, ascending=False)
 
         # 保存先ディレクトリを確保
         target_file_path = target_file_path.replace("/", "_")
@@ -104,7 +110,7 @@ class CalcCentrality:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # CSV保存
-        centrality_df.to_csv(output_dir / "centrality_scores.csv", index=False)
+        centrality_df.to_csv(output_dir / path_config.CENTRALITY_CSV, index=False)
 
     def filter_metadata_monthly(
         self, commit_hashes: list[str], commit_dates: list[datetime]
@@ -193,7 +199,7 @@ class CalcCentrality:
         # --------------------------------
         # 一旦ランダムに10件のファイルのみを処理
         random_existing_files_list: list[Path] = list(
-            existing_files_df["Existing File Path"]
+            existing_files_df[path_config.EXISTING_FILE_COLUMNS]
         )
         random.shuffle(random_existing_files_list)
         random_existing_files_list = random_existing_files_list[:10]
@@ -216,7 +222,7 @@ class CalcCentrality:
                     cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
                 )
                 # 全ファイルを取得
-                file_df = ef.extract_java_file_info(
+                file_df = ef.extract_file_info(
                     cwd=path_config.REPO_DIR, language="java"
                 )
                 # 中心性スコアを計算
@@ -253,42 +259,54 @@ class VisualizeCentrality:
                 path_config.CENTRALITY_DATA_DIR
                 / target_file
                 / sorted_commit_date
-                / "centrality_scores.csv"
+                / path_config.CENTRALITY_CSV
             )
             centrality_df = pd.read_csv(output_dir)
 
             # 対象ファイル名が含まれる行を抽出（部分一致）
             target_row = centrality_df[
-                centrality_df["Existing File Path"].str.endswith(
+                centrality_df[path_config.EXISTING_FILE_COLUMNS].str.endswith(
                     str(target_file).replace("_", "/")
                 )
             ]
 
             if not target_row.empty:
-                centrality_score = target_row["centrality_score"].iloc[0]
+                centrality_score = target_row[path_config.CENTRALITY_COLUMNS].iloc[0]
                 commit_date: str = sorted_commit_date
 
-                data.append({"datetime": commit_date, "centrality": centrality_score})
+                data.append(
+                    {
+                        path_config.COMMIT_DATE_COLUMNS: commit_date,
+                        path_config.CENTRALITY_COLUMNS: centrality_score,
+                    }
+                )
 
         # ------- DataFrameへ変換・整形 -------
         df_plot = pd.DataFrame(data)
-        df_plot["datetime"] = pd.to_datetime(df_plot["datetime"], utc=True)
+        df_plot[path_config.COMMIT_DATE_COLUMNS] = pd.to_datetime(
+            df_plot[path_config.COMMIT_DATE_COLUMNS], utc=True
+        )
 
         # ------- グラフ描画 -------
         sns.set(style="whitegrid")
         plt.figure(figsize=(10, 6))
-        sns.lineplot(data=df_plot, x="datetime", y="centrality", marker="o")
+        sns.lineplot(
+            data=df_plot,
+            x=path_config.COMMIT_DATE_COLUMNS,
+            y=path_config.CENTRALITY_COLUMNS,
+            marker="o",
+        )
 
         file_name: str = Path(str(target_file).replace("_", "/")).stem
         plt.title(f"Time-series changes in the centrality score for {file_name} ")
-        plt.xlabel("commit_time")
-        plt.ylabel("centrality_score")
+        plt.xlabel(path_config.COMMIT_DATE_COLUMNS)
+        plt.ylabel(path_config.CENTRALITY_COLUMNS)
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig(
             path_config.CENTRALITY_DATA_DIR
             / target_file
-            / "centrality_score_change.png",
+            / path_config.CENTRALITY_CHANGES_CSV,
             dpi=300,
         )
 

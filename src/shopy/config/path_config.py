@@ -22,6 +22,18 @@ class PathConfig:
     EXISTING_FILES_INFO_CSV:  Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "existing_files_info.csv"
     CENTRALITY_DATA_DIR:      Path = ROOT_DIR / "data" / REPO_NAME / "centrality"
     STABILITY_DATA_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "stability"
+
+    CENTRALITY_CSV:         str = "centrality_scores.csv"
+    CENTRALITY_CHANGES_CSV: str = "centrality_score_change.csv"
+
+    EXISTING_FILE_COLUMNS:  str = "Existing File Path"
+    DELETED_FILE_COLUMNS:   str = "Deleted File Path"
+    IS_DELETED_COLUMNS:     str = "Is Deleted"
+    COMMIT_ID_COLUMNS:      str = "Commit ID"
+    COMMIT_DATE_COLUMNS:    str = "Commit Date"
+    COMMIT_MESSAGE_COLUMNS: str = "Commit Message"
+    CENTRALITY_COLUMNS:     str = "centrality_score"
+    FULL_PACKAGE_COLUMNS:   str = "FQN"
     
 
 

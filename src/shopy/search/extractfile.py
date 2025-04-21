@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from shopy import ShellCommand
+from shopy import ShellCommand, path_config
 
 
 class ExtractFilesInfo:
@@ -34,19 +34,18 @@ class ExtractFilesInfo:
             elif line.startswith("D\t") and line.endswith(f".{language}"):
                 deleted_files_info.append(
                     {
-                        "Commit ID": commit_id,
-                        "Commit Date": commit_date,
-                        "Commit Message": commit_message,
+                        path_config.COMMIT_ID_COLUMNS: commit_id,
+                        path_config.COMMIT_DATE_COLUMNS: commit_date,
+                        path_config.COMMIT_MESSAGE_COLUMNS: commit_message,
                         # Remove the "D\t" prefix
-                        "Deleted File Path": line[2:],
-                        "Is Deleted": True,
+                        path_config.DELETED_FILE_COLUMNS: line[2:],
+                        path_config.IS_DELETED_COLUMNS: True,
                     }
                 )
 
-        print("削除されたファイルの情報を取得しました。")
         return pd.DataFrame(deleted_files_info)
 
-    def extract_java_file_info(self, cwd, language="java"):
+    def extract_file_info(self, cwd, language="java"):
         """残存ファイルの情報を取得
 
         Args:
@@ -58,14 +57,17 @@ class ExtractFilesInfo:
         """
         # 残存ファイルの情報を取得
         lines = self.shell_command.run_cmd("git ls-tree -r --name-only HEAD", cwd=cwd)
-        java_files_info: list = []
+        files_info: list = []
         for line in lines:
             if line.endswith(f".{language}"):
-                java_files_info.append(
-                    {"Existing File Path": line, "Is Deleted": False}
+                files_info.append(
+                    {
+                        path_config.EXISTING_FILE_COLUMNS: line,
+                        path_config.IS_DELETED_COLUMNS: False,
+                    }
                 )
 
-        return pd.DataFrame(java_files_info)
+        return pd.DataFrame(files_info)
 
     def main(self, isDeleted=False):
         if isDeleted:
@@ -80,7 +82,7 @@ class ExtractFilesInfo:
             file_type = "existing_files"
             output_dir = Path(self.projects_data_dir, file_type)
             os.makedirs(output_dir, exist_ok=True)
-            java_files_info = self.extract_java_file_info(self.repo_dir)
+            java_files_info = self.extract_file_info(self.repo_dir)
             java_files_info.to_csv(
                 Path(output_dir / f"{file_type}_info.csv"), index=False
             )
