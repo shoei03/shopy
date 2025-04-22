@@ -263,7 +263,11 @@ class CalcCentrality:
                 commit_hashes, commit_dates
             )
 
-            for commit_hash, commit_date in zip(filtered_hashes, filtered_dates):
+            for commit_hash, commit_date in tqdm(
+                zip(filtered_hashes, filtered_dates),
+                desc="特定のコミットを処理中",
+                total=len(filtered_hashes),
+            ):
                 # コミットIDの状態にリポジトリを戻す
                 self.shell_command.run_cmd(
                     cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
