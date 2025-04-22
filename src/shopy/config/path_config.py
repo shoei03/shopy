@@ -24,7 +24,7 @@ class PathConfig:
     STABILITY_DATA_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "stability"
 
     CENTRALITY_CSV:         str = "centrality_scores.csv"
-    CENTRALITY_CHANGES_CSV: str = "centrality_score_change.csv"
+    CENTRALITY_CHANGES_PNG: str = "centrality_score_change.png"
 
     EXISTING_FILE_COLUMNS:  str = "Existing File Path"
     DELETED_FILE_COLUMNS:   str = "Deleted File Path"
