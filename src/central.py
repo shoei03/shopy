@@ -203,141 +203,7 @@ class CalcCentrality:
             output_dir / path_config.CENTRALITY_CSV, index=False
         )
 
-    def main(self) -> None:
-        # # 2024年の最終コミット日時にリポジトリを戻す
-        # last_commit_metadata: str = self.get_last_commit_date(
-        #     repo_path=path_config.REPO_DIR, limit_year="2025"
-        # )
-        # last_commit_hash: str = last_commit_metadata.split("|")[0]
-        # self.shell_command.run_cmd(
-        #     cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
-        # )
-
-        # # ファイルの情報を書き込む
-        # efi = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
-        # existing_files_df = efi.main(isDeleted=False)
-
-        # # ファイルの情報を読み取る
-        # existing_files_df = pd.read_csv(
-        #     path_config.EXISTING_FILES_INFO_CSV,
-        #     encoding="utf-8",
-        # )
-
-        # # --------------------------------
-        # # 一旦ランダムに10件のファイルのみを処理
-        # random_existing_files_list: list[Path] = list(
-        #     existing_files_df[path_config.EXISTING_FILE_COLUMNS]
-        # )
-        # random.shuffle(random_existing_files_list)
-        # random_existing_files_list = random_existing_files_list[:10]
-        # # --------------------------------
-        # for file_path_in_repo in tqdm(
-        #     random_existing_files_list,
-        #     desc="ファイルを1件ずつ処理中",
-        #     dynamic_ncols=True,
-        # ):
-        #     commit_hashes, commit_dates = self.extract_commit_metadata(
-        #         file_path_in_repo=file_path_in_repo
-        #     )
-        #     filtered_hashes, filtered_dates = self.filter_metadata_monthly(
-        #         commit_hashes, commit_dates
-        #     )
-
-        #     for commit_hash, commit_date in zip(filtered_hashes, filtered_dates):
-        #         # コミットIDの状態にリポジトリを戻す
-        #         self.shell_command.run_cmd(
-        #             cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
-        #         )
-
-        #         # ファイルの依存関係を取得
-        #         file_dependency: dict = self.build_dependency(
-        #             max_files=20000,
-        #             cwd=path_config.REPO_DIR,
-        #             language="java",
-        #         )
-
-        #         # 完全修飾クラス名を取得
-        #         fqn = file_dependency[Path(file_path_in_repo)]["fqn"]
-
-        #         # ファイルの依存関係をjsonで保存
-        #         output_path: Path = (
-        #             path_config.CENTRALITY_DATA_DIR
-        #             / fqn
-        #             / str(commit_date)
-        #             / "file_dependency.json"
-        #         )
-        #         processed_file_dependency = {
-        #             str(k): v for k, v in file_dependency.items()
-        #         }
-        #         self.json.write_json(
-        #             dict=processed_file_dependency,
-        #             output_dir=output_path,
-        #         )
-
-        FQNs: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
-        for fqn in FQNs:
-            commit_dates: list[Path] = self.get_child_dir(
-                path_config.CENTRALITY_DATA_DIR / fqn
-            )
-
-            for commit_date in commit_dates:
-                output_dir: Path = (
-                    path_config.CENTRALITY_DATA_DIR / fqn / commit_date
-                )
-
-                self.create_centrality(output_dir=output_dir)
-
-            # 中心性の時系列変化を可視化
-            # visualize_centrality = VisualizeCentrality()
-            # visualize_centrality.main(target_file=file_path_in_repo)
-
-
-class VisualizeCentrality:
-    def main(self, target_file: Path) -> None:
-        file_path: Path = path_config.CENTRALITY_DATA_DIR / target_file
-        data: list = []
-
-        # コミット日時のリストを取得
-        commit_dates: list[Path] = [p.name for p in file_path.iterdir() if p.is_dir()]
-        sorted_commit_dates: list[str] = sorted(
-            commit_dates, key=datetime.fromisoformat
-        )
-
-        # 対象ファイルの中心性スコアを取得
-        for sorted_commit_date in sorted_commit_dates:
-            output_dir: Path = (
-                path_config.CENTRALITY_DATA_DIR
-                / target_file
-                / sorted_commit_date
-                / path_config.CENTRALITY_CSV
-            )
-            centrality_df = pd.read_csv(output_dir)
-
-            # 対象ファイル名が含まれる行を抽出（部分一致）
-            target_row = centrality_df[
-                centrality_df[path_config.EXISTING_FILE_COLUMNS].str.endswith(
-                    str(target_file).replace("_", "/")
-                )
-            ]
-
-            if not target_row.empty:
-                centrality_score = target_row[path_config.CENTRALITY_COLUMNS].iloc[0]
-                commit_date: str = sorted_commit_date
-
-                data.append(
-                    {
-                        path_config.COMMIT_DATE_COLUMNS: commit_date,
-                        path_config.CENTRALITY_COLUMNS: centrality_score,
-                    }
-                )
-
-        # ------- DataFrameへ変換・整形 -------
-        df_plot = pd.DataFrame(data)
-        df_plot[path_config.COMMIT_DATE_COLUMNS] = pd.to_datetime(
-            df_plot[path_config.COMMIT_DATE_COLUMNS], utc=True
-        )
-
-        # ------- グラフ描画 -------
+    def save_centrality_changes(self, df_plot: pd.DataFrame, fqn: str) -> None:
         sns.set(style="whitegrid")
         plt.figure(figsize=(10, 6))
         sns.lineplot(
@@ -347,18 +213,120 @@ class VisualizeCentrality:
             marker="o",
         )
 
-        file_name: str = Path(str(target_file).replace("_", "/")).stem
-        plt.title(f"Time-series changes in the centrality score for {file_name} ")
+        plt.title(f"Time-series changes in the centrality score for {fqn} ")
         plt.xlabel(path_config.COMMIT_DATE_COLUMNS)
         plt.ylabel(path_config.CENTRALITY_COLUMNS)
         plt.xticks(rotation=45)
         plt.tight_layout()
         plt.savefig(
-            path_config.CENTRALITY_DATA_DIR
-            / target_file
-            / path_config.CENTRALITY_CHANGES_CSV,
+            path_config.CENTRALITY_DATA_DIR / fqn / path_config.CENTRALITY_CHANGES_PNG,
             dpi=300,
         )
+
+    def main(self) -> None:
+        # 2024年の最終コミット日時にリポジトリを戻す
+        last_commit_metadata: str = self.get_last_commit_date(
+            repo_path=path_config.REPO_DIR, limit_year="2025"
+        )
+        last_commit_hash: str = last_commit_metadata.split("|")[0]
+        self.shell_command.run_cmd(
+            cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
+        )
+
+        # # ファイルの情報を書き込む
+        # efi = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
+        # existing_files_df = efi.main(isDeleted=False)
+
+        # ファイルの情報を読み取る
+        existing_files_df = pd.read_csv(
+            path_config.EXISTING_FILES_INFO_CSV,
+            encoding="utf-8",
+        )
+
+        # --------------------------------
+        # 一旦ランダムに10件のファイルのみを処理
+        random_existing_files_list: list[Path] = list(
+            existing_files_df[path_config.EXISTING_FILE_COLUMNS]
+        )
+        random.shuffle(random_existing_files_list)
+        random_existing_files_list = random_existing_files_list[:10]
+        # --------------------------------
+        for file_path_in_repo in tqdm(
+            random_existing_files_list,
+            desc="ファイルを1件ずつ処理中",
+            dynamic_ncols=True,
+        ):
+            commit_hashes, commit_dates = self.extract_commit_metadata(
+                file_path_in_repo=file_path_in_repo
+            )
+            filtered_hashes, filtered_dates = self.filter_metadata_monthly(
+                commit_hashes, commit_dates
+            )
+
+            for commit_hash, commit_date in zip(filtered_hashes, filtered_dates):
+                # コミットIDの状態にリポジトリを戻す
+                self.shell_command.run_cmd(
+                    cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
+                )
+
+                # ファイルの依存関係を取得
+                file_dependency: dict = self.build_dependency(
+                    max_files=20000,
+                    cwd=path_config.REPO_DIR,
+                    language="java",
+                )
+
+                # 完全修飾クラス名を取得
+                fqn = file_dependency[Path(file_path_in_repo)]["fqn"]
+
+                # ファイルの依存関係をjsonで保存
+                output_path: Path = (
+                    path_config.CENTRALITY_DATA_DIR
+                    / fqn
+                    / str(commit_date)
+                    / "file_dependency.json"
+                )
+                processed_file_dependency = {
+                    str(k): v for k, v in file_dependency.items()
+                }
+                self.json.write_json(
+                    dict=processed_file_dependency,
+                    output_dir=output_path,
+                )
+
+        FQNs: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
+        for fqn in FQNs:
+            commit_dates: list[Path] = self.get_child_dir(
+                path_config.CENTRALITY_DATA_DIR / fqn
+            )
+
+            data: list = []
+            for commit_date in commit_dates:
+                output_dir: Path = path_config.CENTRALITY_DATA_DIR / fqn / commit_date
+
+                self.create_centrality(output_dir=output_dir)
+
+                # 中心性スコアを取得
+                centrality_df = pd.read_csv(output_dir / path_config.CENTRALITY_CSV)
+                target_row = centrality_df[centrality_df["FQN"].str.endswith(str(fqn))]
+                if not target_row.empty:
+                    centrality_score = target_row[path_config.CENTRALITY_COLUMNS].iloc[
+                        0
+                    ]
+
+                    data.append(
+                        {
+                            path_config.COMMIT_DATE_COLUMNS: commit_date,
+                            path_config.CENTRALITY_COLUMNS: centrality_score,
+                        }
+                    )
+
+            df_plot = pd.DataFrame(data)
+            df_plot[path_config.COMMIT_DATE_COLUMNS] = pd.to_datetime(
+                df_plot[path_config.COMMIT_DATE_COLUMNS], utc=True
+            )
+
+            self.save_centrality_changes(df_plot, fqn)
 
 
 if __name__ == "__main__":
