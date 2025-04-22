@@ -1,6 +1,7 @@
 import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from time import sleep
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -84,7 +85,10 @@ class CalcCentrality:
         return G
 
     def filter_metadata_monthly(
-        self, commit_hashes: list[str], commit_dates: list[datetime]
+        self,
+        commit_hashes: list[str],
+        commit_dates: list[datetime],
+        time_period: int = 30,
     ) -> list[tuple[str, datetime]]:
         """1ヶ月ごとにコミットをフィルタリングする。
 
@@ -106,7 +110,7 @@ class CalcCentrality:
         start_date = commit_dates[0]
         end_date = commit_dates[-1]
 
-        current_target = start_date + timedelta(days=30)
+        current_target = start_date + timedelta(days=time_period)
         idx = 1
 
         while current_target < end_date and idx < len(commit_dates):
@@ -114,7 +118,7 @@ class CalcCentrality:
                 idx += 1
             if idx < len(commit_dates):
                 selected_indices.append(idx)
-            current_target += timedelta(days=30)
+            current_target += timedelta(days=time_period)
 
         if selected_indices[-1] != len(commit_dates) - 1:
             selected_indices.append(len(commit_dates) - 1)
@@ -261,7 +265,7 @@ class CalcCentrality:
                     file_path_in_repo=file_path_in_repo
                 )
                 filtered_hashes, filtered_dates = self.filter_metadata_monthly(
-                    commit_hashes, commit_dates
+                    commit_hashes, commit_dates, time_period=180
                 )
             except Exception as e:
                 print(f"ファイルのメタデータの取得でエラーが発生しました。: {e}")
@@ -277,6 +281,7 @@ class CalcCentrality:
                     self.shell_command.run_cmd(
                         cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
                     )
+                    sleep(1)
 
                     # ファイルの依存関係を取得
                     file_dependency: dict = self.build_dependency(
@@ -303,7 +308,9 @@ class CalcCentrality:
                         output_dir=output_path,
                     )
                 except Exception as e:
-                    print(f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}")
+                    print(
+                        f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
+                    )
                     continue
 
         # FQNs: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
