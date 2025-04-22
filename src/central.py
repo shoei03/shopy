@@ -1,4 +1,5 @@
 import random
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep
@@ -271,47 +272,57 @@ class CalcCentrality:
                 print(f"ファイルのメタデータの取得でエラーが発生しました。: {e}")
                 continue
 
-            for commit_hash, commit_date in tqdm(
-                zip(filtered_hashes, filtered_dates),
-                desc="特定のコミットを処理中",
-                total=len(filtered_hashes),
-            ):
-                try:
-                    # コミットIDの状態にリポジトリを戻す
-                    self.shell_command.run_cmd(
-                        cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
-                    )
-                    sleep(1)
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                for commit_hash, commit_date in tqdm(
+                    zip(filtered_hashes, filtered_dates),
+                    desc="特定のコミットを処理中",
+                    total=len(filtered_hashes),
+                ):
+                    try:
+                        # コミットIDの状態にリポジトリを戻す
+                        self.shell_command.run_cmd(
+                            cmd=f"git reset --hard {commit_hash}",
+                            cwd=path_config.REPO_DIR,
+                        )
+                        sleep(2)
 
-                    # ファイルの依存関係を取得
-                    file_dependency: dict = self.build_dependency(
-                        max_files=20000,
-                        cwd=path_config.REPO_DIR,
-                        language="java",
-                    )
+                        # ファイルの依存関係を取得
+                        file_dependency: dict = self.build_dependency(
+                            max_files=20000,
+                            cwd=path_config.REPO_DIR,
+                            language="java",
+                        )
 
-                    # 完全修飾クラス名を取得
-                    fqn = file_dependency[Path(file_path_in_repo)]["fqn"]
+                        if Path(file_path_in_repo) not in file_dependency:
+                            print(
+                                f"[WARN] {file_path_in_repo} が依存関係に見つかりません。スキップします。"
+                            )
+                            continue
 
-                    # ファイルの依存関係をjsonで保存
-                    output_path: Path = (
-                        path_config.CENTRALITY_DATA_DIR
-                        / fqn
-                        / str(commit_date)
-                        / "file_dependency.json"
-                    )
-                    processed_file_dependency = {
-                        str(k): v for k, v in file_dependency.items()
-                    }
-                    self.json.write_json(
-                        dict=processed_file_dependency,
-                        output_dir=output_path,
-                    )
-                except Exception as e:
-                    print(
-                        f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
-                    )
-                    continue
+                        # 完全修飾クラス名を取得
+                        fqn = file_dependency[Path(file_path_in_repo)]["fqn"]
+
+                        # ファイルの依存関係をjsonで保存
+                        output_path: Path = (
+                            path_config.CENTRALITY_DATA_DIR
+                            / fqn
+                            / str(commit_date)
+                            / "file_dependency.json"
+                        )
+                        processed_file_dependency = {
+                            str(k): v for k, v in file_dependency.items()
+                        }
+                        executor.submit(
+                            self.json.write_json(
+                                dict=processed_file_dependency,
+                                output_dir=output_path,
+                            )
+                        )
+                    except Exception as e:
+                        print(
+                            f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
+                        )
+                        continue
 
         # FQNs: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
         # for fqn in FQNs:
