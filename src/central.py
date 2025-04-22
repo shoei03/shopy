@@ -238,7 +238,11 @@ class CalcCentrality:
             cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
         )
 
-        # ファイルを取得
+        # ファイルの情報を書き込む
+        efi = ExtractFilesInfo(cwd=path_config.REPO_DIR, language="java")
+        existing_files_df = efi.main(isDeleted=False)
+
+        # ファイルの情報を読み取る
         existing_files_df = pd.read_csv(
             path_config.EXISTING_FILES_INFO_CSV,
             encoding="utf-8",
