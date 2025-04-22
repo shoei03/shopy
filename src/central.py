@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -203,14 +204,14 @@ class CalcCentrality:
         )
 
     def main(self) -> None:
-        # 2024年の最終コミット日時にリポジトリを戻す
-        last_commit_metadata: str = self.get_last_commit_date(
-            repo_path=path_config.REPO_DIR, limit_year="2025"
-        )
-        last_commit_hash: str = last_commit_metadata.split("|")[0]
-        self.shell_command.run_cmd(
-            cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
-        )
+        # # 2024年の最終コミット日時にリポジトリを戻す
+        # last_commit_metadata: str = self.get_last_commit_date(
+        #     repo_path=path_config.REPO_DIR, limit_year="2025"
+        # )
+        # last_commit_hash: str = last_commit_metadata.split("|")[0]
+        # self.shell_command.run_cmd(
+        #     cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
+        # )
 
         # # ファイルの情報を書き込む
         # efi = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
@@ -255,11 +256,13 @@ class CalcCentrality:
         #             language="java",
         #         )
 
+        #         # 完全修飾クラス名を取得
+        #         fqn = file_dependency[Path(file_path_in_repo)]["fqn"]
+
         #         # ファイルの依存関係をjsonで保存
-        #         file_name_in_repo: str = file_path_in_repo.replace("/", "_")
         #         output_path: Path = (
         #             path_config.CENTRALITY_DATA_DIR
-        #             / file_name_in_repo
+        #             / fqn
         #             / str(commit_date)
         #             / "file_dependency.json"
         #         )
@@ -271,15 +274,15 @@ class CalcCentrality:
         #             output_dir=output_path,
         #         )
 
-        file_names: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
-        for file_name in file_names:
+        FQNs: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
+        for fqn in FQNs:
             commit_dates: list[Path] = self.get_child_dir(
-                path_config.CENTRALITY_DATA_DIR / file_name
+                path_config.CENTRALITY_DATA_DIR / fqn
             )
 
             for commit_date in commit_dates:
                 output_dir: Path = (
-                    path_config.CENTRALITY_DATA_DIR / file_name / commit_date
+                    path_config.CENTRALITY_DATA_DIR / fqn / commit_date
                 )
 
                 self.create_centrality(output_dir=output_dir)
