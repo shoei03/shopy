@@ -145,7 +145,7 @@ class CalcCentrality:
         shell_command = ShellCommand()
         raw_logs: list[str] = shell_command.run_cmd(
             cmd=(
-                f"git log --all --full-history --reverse --pretty=format:%H,%aI -- {file_path_in_repo}"
+                f"git log main --full-history --reverse --pretty=format:%H,%aI -- {file_path_in_repo}"
             ),
             cwd=path_config.REPO_DIR,
         )
@@ -277,6 +277,7 @@ class CalcCentrality:
                     zip(filtered_hashes, filtered_dates),
                     desc="特定のコミットを処理中",
                     total=len(filtered_hashes),
+                    leave=False,
                 ):
                     try:
                         # コミットIDの状態にリポジトリを戻す
@@ -284,7 +285,7 @@ class CalcCentrality:
                             cmd=f"git reset --hard {commit_hash}",
                             cwd=path_config.REPO_DIR,
                         )
-                        sleep(2)
+                        sleep(4)
 
                         # ファイルの依存関係を取得
                         file_dependency: dict = self.build_dependency(
