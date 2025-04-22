@@ -239,7 +239,7 @@ class CalcCentrality:
         )
 
         # ファイルの情報を書き込む
-        efi = ExtractFilesInfo(cwd=path_config.REPO_DIR, language="java")
+        efi = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
         existing_files_df = efi.main(isDeleted=False)
 
         # ファイルの情報を読み取る
@@ -254,7 +254,7 @@ class CalcCentrality:
             existing_files_df[path_config.EXISTING_FILE_COLUMNS]
         )
         random.shuffle(random_existing_files_list)
-        random_existing_files_list = random_existing_files_list[:3]
+        random_existing_files_list = random_existing_files_list[:10]
         # --------------------------------
         for file_path_in_repo in tqdm(
             random_existing_files_list,
