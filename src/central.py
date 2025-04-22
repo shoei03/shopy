@@ -8,12 +8,57 @@ import pandas as pd
 import seaborn as sns
 from tqdm import tqdm
 
-from shopy import ExtractFilesInfo, GetName, ShellCommand, path_config
+from shopy import JSON, ExtractFilesInfo, GetName, ShellCommand, path_config
 
 
 class CalcCentrality:
     def __init__(self):
         self.shell_command = ShellCommand()
+        self.json = JSON()
+
+    def build_dependency(
+        self,
+        cwd: Path = path_config.REPO_DIR,
+        language: str = "java",
+        max_files: int = 20000,
+    ) -> dict:
+        """ファイルの依存関係を取得する
+
+        Args:
+            cwd (Path, optional): リポジトリまでのパス. Defaults to path_config.REPO_DIR.
+            language (str, optional): 対象言語. Defaults to "java".
+            max_files (int, optional): 最大ファイル数. Defaults to 20000.
+
+        Returns:
+            dict: ファイルの依存関係
+        """
+        # ファイル情報を取得
+        ef = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
+        file_df = ef.extract_file_info(cwd=cwd, language=language)
+
+        # ファイルのパスを取得
+        file_paths: list[Path] = [
+            Path(f) for f in file_df[path_config.EXISTING_FILE_COLUMNS].tolist()
+        ]
+
+        # データ数が多い場合はサンプリング
+        sampled_files = (
+            file_paths[:max_files] if len(file_paths) > max_files else file_paths
+        )
+
+        # ファイル内のpackageとimportを取得
+        get_name = GetName()
+        file_dependency: dict[Path, dict[str, object]] = {
+            file_path: {
+                "fqn": get_name.find_fqn(cwd, file_path, path_config.PACKAGE_PREFIX),
+                "imp": get_name.extract_imports(cwd, file_path),
+            }
+            for file_path in tqdm(
+                sampled_files, desc="依存関係解析", leave=False, dynamic_ncols=True
+            )
+        }
+
+        return file_dependency
 
     def build_dependency_graph(
         self, file_paths: list[Path], max_files: int = 20000
@@ -28,35 +73,23 @@ class CalcCentrality:
             tuple[nx.DiGraph, dict[Path, str]]: ファイルパスとパッケージ名のマッピング
         """
         G = nx.DiGraph()
-        get_name = GetName()
-        filepath_to_package_name = {}
 
-        # データ数が多い場合はサンプリング
-        sampled_files = (
-            file_paths[:max_files] if len(file_paths) > max_files else file_paths
+        G.add_nodes_from(
+            info["fqn"] for info in file_dependency.values() if info["fqn"]
         )
-
-        # パッケージ名を取得してノードを追加
-        for file in tqdm(
-            sampled_files, desc="FQN抽出", leave=False, dynamic_ncols=True
-        ):
-            fqn = get_name.get_fqn(file, base_package_prefix=path_config.PACKAGE_PREFIX)
-            if fqn:
-                filepath_to_package_name[file] = fqn
-                G.add_node(fqn)
 
         # import文を取得してエッジを追加
         for file, src_fqn in tqdm(
-            filepath_to_package_name.items(),
+            file_dependency.items(),
             desc="依存関係解析",
             leave=False,
             dynamic_ncols=True,
         ):
             for imp in get_name.extract_imports(file):
                 if imp.startswith(path_config.PACKAGE_PREFIX):
-                    G.add_edge(src_fqn, imp)
+                    G.add_edge(src_fqn, imp)  # A -> B
 
-        return G, filepath_to_package_name
+        return G, file_dependency
 
     def analyze_centrality_from_df(
         self,
@@ -64,7 +97,7 @@ class CalcCentrality:
         cwd: Path,
         max_files: int = 2000,
         commit_date: datetime = "",
-        target_file_path: str = "",
+        file_path_in_repo: str = "",
     ) -> None:
         """ファイルの依存関係を解析し、中心性スコアを計算する。
 
@@ -73,7 +106,7 @@ class CalcCentrality:
             cwd (Path): リポジトリのカレントディレクトリ
             max_files (int, optional): ファイル数の制限 Defaults to 2000.
             commit_date (datetime, optional): コミット日時 Defaults to "".
-            target_file_path (str, optional): 着目するファイル Defaults to "".
+            file_path_in_repo (str, optional): 着目するファイル Defaults to "".
         """
         file_paths: list[Path] = [
             cwd / Path(f) for f in file_df[path_config.EXISTING_FILE_COLUMNS].tolist()
@@ -103,9 +136,9 @@ class CalcCentrality:
         ].sort_values(by=path_config.CENTRALITY_COLUMNS, ascending=False)
 
         # 保存先ディレクトリを確保
-        target_file_path = target_file_path.replace("/", "_")
+        file_path_in_repo = file_path_in_repo.replace("/", "_")
         output_dir = Path(
-            path_config.CENTRALITY_DATA_DIR / target_file_path / str(commit_date)
+            path_config.CENTRALITY_DATA_DIR / file_path_in_repo / str(commit_date)
         )
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -155,7 +188,7 @@ class CalcCentrality:
         return filtered_hashes, filtered_dates
 
     def extract_commit_metadata(
-        self, file_path: Path
+        self, file_path_in_repo: Path
     ) -> tuple[list[str], list[datetime]]:
         """gitのメタデータを抽出する
 
@@ -169,7 +202,7 @@ class CalcCentrality:
         shell_command = ShellCommand()
         raw_logs: list[str] = shell_command.run_cmd(
             cmd=(
-                f"git log --all --full-history --reverse --pretty=format:%H,%aI -- {file_path}"
+                f"git log --all --full-history --reverse --pretty=format:%H,%aI -- {file_path_in_repo}"
             ),
             cwd=path_config.REPO_DIR,
         )
@@ -196,8 +229,6 @@ class CalcCentrality:
         return all_commits[-1]
 
     def main(self) -> None:
-        ef = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
-
         # 2024年の最終コミット日時にリポジトリを戻す
         last_commit_metadata: str = self.get_last_commit_date(
             repo_path=path_config.REPO_DIR, limit_year="2025"
@@ -219,15 +250,15 @@ class CalcCentrality:
             existing_files_df[path_config.EXISTING_FILE_COLUMNS]
         )
         random.shuffle(random_existing_files_list)
-        random_existing_files_list = random_existing_files_list[:10]
+        random_existing_files_list = random_existing_files_list[:3]
         # --------------------------------
-        for file_path in tqdm(
+        for file_path_in_repo in tqdm(
             random_existing_files_list,
             desc="ファイルを1件ずつ処理中",
             dynamic_ncols=True,
         ):
             commit_hashes, commit_dates = self.extract_commit_metadata(
-                file_path=file_path
+                file_path_in_repo=file_path_in_repo
             )
             filtered_hashes, filtered_dates = self.filter_metadata_monthly(
                 commit_hashes, commit_dates
@@ -238,25 +269,51 @@ class CalcCentrality:
                 self.shell_command.run_cmd(
                     cmd=f"git reset --hard {commit_hash}", cwd=path_config.REPO_DIR
                 )
-                # 全ファイルを取得
-                file_df = ef.extract_file_info(
-                    cwd=path_config.REPO_DIR, language="java"
+
+                # ファイルの依存関係を取得
+                file_dependency: dict = self.build_dependency(
+                    max_files=20000,
+                    cwd=path_config.REPO_DIR,
+                    language="java",
                 )
-                # 中心性スコアを計算
-                if not file_df.empty:
-                    self.analyze_centrality_from_df(
-                        file_df,
-                        path_config.REPO_DIR,
-                        max_files=20000,
-                        commit_date=commit_date,
-                        target_file_path=file_path,
-                    )
-                else:
-                    print("ファイルが見つかりませんでした。")
+
+                # ファイルの依存関係をjsonで保存
+                file_name_in_repo: str = file_path_in_repo.replace("/", "_")
+                output_path: Path = (
+                    path_config.CENTRALITY_DATA_DIR
+                    / file_name_in_repo
+                    / str(commit_date)
+                    / "file_dependency.json"
+                )
+                processed_file_dependency = {
+                    str(k): v for k, v in file_dependency.items()
+                }
+                self.json.write_json(
+                    dict=processed_file_dependency,
+                    output_dir=output_path,
+                )
+
+                # with output_path.open("wb") as f:
+                #     pickle.dump(file_dependency, f)
+
+                # with output_path.open("rb") as f:
+                #     file_dependency = pickle.load(f)
+
+                # # 中心性スコアを計算
+                # if not file_df.empty:
+                #     self.analyze_centrality_from_df(
+                #         file_df,
+                #         path_config.REPO_DIR,
+                #         max_files=20000,
+                #         commit_date=commit_date,
+                #         file_path_in_repo=file_path_in_repo,
+                #     )
+                # else:
+                #     print("ファイルが見つかりませんでした。")
 
             # 中心性の時系列変化を可視化
-            visualize_centrality = VisualizeCentrality()
-            visualize_centrality.main(target_file=file_path)
+            # visualize_centrality = VisualizeCentrality()
+            # visualize_centrality.main(target_file=file_path_in_repo)
 
 
 class VisualizeCentrality:
