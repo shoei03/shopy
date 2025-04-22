@@ -3,6 +3,7 @@ from typing import Optional
 
 import javalang
 from javalang.parser import JavaSyntaxError
+from javalang.tokenizer import LexerError
 
 # 試すエンコーディング一覧
 _COMMON_ENCODINGS = ["utf-8", "shift_jis", "euc_jp", "iso2022_jp"]
@@ -57,7 +58,18 @@ class GetName:
                 ),
                 None,
             )
-        except (JavaSyntaxError, OSError):
+        except (
+            JavaSyntaxError,
+            LexerError,
+            OSError,
+            AttributeError,
+            StopIteration,
+            ValueError,
+        ) as e:
+            print(f"[WARN] Failed to parse FQN from {java_file}: {e}")
+            return None
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in find_fqn() for {java_file}: {e}")
             return None
 
     def extract_imports(self, cwd: Path, java_file: Path) -> list[str]:
@@ -75,5 +87,9 @@ class GetName:
             content = self._safe_read_java(cwd, java_file)
             tree = javalang.parse.parse(content)
             return [imp.path for imp in tree.imports]
-        except (JavaSyntaxError, OSError):
+        except (JavaSyntaxError, LexerError, OSError, AttributeError, ValueError) as e:
+            print(f"[WARN] Failed to extract imports from {java_file}: {e}")
+            return []
+        except Exception as e:
+            print(f"[ERROR] Unexpected error in extract_imports() for {java_file}: {e}")
             return []
