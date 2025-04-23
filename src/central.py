@@ -145,7 +145,7 @@ class CalcCentrality:
         shell_command = ShellCommand()
         raw_logs: list[str] = shell_command.run_cmd(
             cmd=(
-                f"git log main --full-history --reverse --pretty=format:%H,%aI -- {file_path_in_repo}"
+                f"git log --all --full-history --reverse --pretty=format:%H,%aI -- {file_path_in_repo}"
             ),
             cwd=path_config.REPO_DIR,
         )
@@ -237,6 +237,7 @@ class CalcCentrality:
         self.shell_command.run_cmd(
             cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
         )
+        sleep(4)
 
         # # ファイルの情報を書き込む
         # efi = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
