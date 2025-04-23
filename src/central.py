@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep
@@ -273,6 +274,62 @@ class CalcCentrality:
 
         timeseries_df.to_csv(output_dir / "centrality_timeseries.csv")
 
+    def sanitize_filename(self, name: str) -> str:
+        """ファイル名に使えない文字を安全な形式に変換"""
+        return re.sub(r'[\\/*?:"<>|]', "_", name)
+
+    def plot_centrality_per_class(
+        self,
+        csv_path: Path,
+        output_dir: Path,
+        class_list: list[str],
+    ) -> None:
+        """
+        各クラスごとに中心性スコアの時系列グラフを作成し、個別に画像保存する。
+
+        :param csv_path: centrality_timeseries.csv のパス
+        :param output_dir: 保存先ディレクトリ
+        :param class_list: 可視化対象のクラスFQNのリスト
+        """
+        # データ読み込みと整形
+        df = pd.read_csv(csv_path, index_col=0)
+        df.columns = pd.to_datetime(df.columns)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for fqn in tqdm(
+            class_list,
+            desc="クラスごとの中心性スコアをプロット中",
+            leave=True,
+            dynamic_ncols=True,
+        ):
+            if fqn not in df.index:
+                print(f"スキップ（存在しないクラス）: {fqn}")
+                continue
+
+            series = df.loc[fqn]
+            data = pd.DataFrame(
+                {"timestamp": series.index, "centrality_score": series.values}
+            )
+
+            # プロット設定
+            sns.set(style="whitegrid")
+            plt.figure(figsize=(10, 5))
+            sns.lineplot(data=data, x="timestamp", y="centrality_score", marker="o")
+            plt.title(f"Centrality Over Time\n{fqn}", fontsize=12)
+            plt.xlabel("Time")
+            plt.ylabel(path_config.CENTRALITY_COLUMNS)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
+            # ファイル名を安全に生成して保存
+            safe_name = self.sanitize_filename(fqn)
+            save_path = output_dir / f"{safe_name}.png"
+            plt.savefig(save_path)
+            plt.close()
+
+            print(f"保存しました: {save_path}")
+
     def main(self) -> None:
         # 2024年の最終コミット日時にリポジトリを戻す
         last_commit_metadata: str = self.get_last_commit_date(
@@ -284,60 +341,75 @@ class CalcCentrality:
         )
         sleep(2)
 
-        # リポジトリの月次データを取得し、CSVに保存
-        self.create_repo_metadata(
-            input_dir=path_config.REPO_DIR,
-            start_date="2008-01-01",
-            end_date="2024-12-31",
-        )
+        # # リポジトリの月次データを取得し、CSVに保存
+        # self.create_repo_metadata(
+        #     input_dir=path_config.REPO_DIR,
+        #     start_date="2008-01-01",
+        #     end_date="2024-12-31",
+        # )
 
-        # ファイルの依存関係を計算し、jsonで保存
-        repo_metadata_df = pd.read_csv(
-            path_config.PROJECTS_DATA_DIR / "monthly_commits.csv"
-        )
-        filtered_dates: list[datetime] = repo_metadata_df[
-            path_config.COMMIT_DATE_COLUMNS
-        ].tolist()
-        filtered_hashes: list[str] = repo_metadata_df[
-            path_config.COMMIT_ID_COLUMNS
-        ].tolist()
-        for commit_hash, commit_date in tqdm(
-            zip(filtered_hashes, filtered_dates),
-            desc="特定のコミットを処理中",
-            total=len(filtered_hashes),
-            leave=False,
-        ):
-            try:
-                output_path: Path = (
-                    path_config.CENTRALITY_DATA_DIR
-                    / str(commit_date)
-                    / "file_dependency.json"
-                )
-                self.build_dependency(
-                    max_files=20000,
-                    input_dir=path_config.REPO_DIR,
-                    language="java",
-                    output_dir=output_path,
-                    state=commit_hash,
-                )
+        # # ファイルの依存関係を計算し、jsonで保存
+        # repo_metadata_df = pd.read_csv(
+        #     path_config.PROJECTS_DATA_DIR / "monthly_commits.csv"
+        # )
+        # filtered_dates: list[datetime] = repo_metadata_df[
+        #     path_config.COMMIT_DATE_COLUMNS
+        # ].tolist()
+        # filtered_hashes: list[str] = repo_metadata_df[
+        #     path_config.COMMIT_ID_COLUMNS
+        # ].tolist()
+        # for commit_hash, commit_date in tqdm(
+        #     zip(filtered_hashes, filtered_dates),
+        #     desc="特定のコミットを処理中",
+        #     total=len(filtered_hashes),
+        #     leave=False,
+        # ):
+        #     try:
+        #         output_path: Path = (
+        #             path_config.CENTRALITY_DATA_DIR
+        #             / str(commit_date)
+        #             / "file_dependency.json"
+        #         )
+        #         self.build_dependency(
+        #             max_files=20000,
+        #             input_dir=path_config.REPO_DIR,
+        #             language="java",
+        #             output_dir=output_path,
+        #             state=commit_hash,
+        #         )
 
-            except Exception as e:
-                print(
-                    f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
-                )
-                continue
+        #     except Exception as e:
+        #         print(
+        #             f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
+        #         )
+        #         continue
 
-        # 中心性スコアを計算し、CSVに保存
-        filtered_dates: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
-        for commit_date in filtered_dates:
-            input_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
-            output_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
-            self.create_centrality(input_dir=input_dir, output_dir=output_dir)
+        # # 中心性スコアを計算し、CSVに保存
+        # filtered_dates: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
+        # for commit_date in tqdm(
+        #     filtered_dates, desc="中心性スコアを計算中", leave=False, dynamic_ncols=True
+        #     ):
+        #     input_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
+        #     output_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
+        #     self.create_centrality(input_dir=input_dir, output_dir=output_dir)
 
-        # 中心性スコアの時系列データを作成し、CSVに保存
-        self.load_centrality_timeseries(
-            input_dir=path_config.CENTRALITY_DATA_DIR,
-            output_dir=path_config.EXISTING_FILES_DATA_DIR,
+        # # 中心性スコアの時系列データを作成し、CSVに保存
+        # self.load_centrality_timeseries(
+        #     input_dir=path_config.CENTRALITY_DATA_DIR,
+        #     output_dir=path_config.EXISTING_FILES_DATA_DIR,
+        # )
+
+        # 中心性スコアの時系列データを可視化
+        self.plot_centrality_per_class(
+            csv_path=(
+                path_config.EXISTING_FILES_DATA_DIR / "centrality_timeseries.csv"
+            ),
+            output_dir=path_config.L1_CENTRALITY_DIR,
+            class_list=[
+                "org.springframework.aop.framework.adapter.AfterReturningAdviceAdapter",
+                "org.springframework.aop.framework.adapter.AfterReturningAdviceInterceptor",
+                "org.springframework.aop.framework.adapter.DefaultAdvisorAdapterRegistry",
+            ],
         )
 
 

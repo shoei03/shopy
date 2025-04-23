@@ -21,6 +21,8 @@ class PathConfig:
     EXISTING_FILES:           Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "files"
     EXISTING_FILES_INFO_CSV:  Path = ROOT_DIR / "data" / REPO_NAME / "existing_files" / "existing_files_info.csv"
     CENTRALITY_DATA_DIR:      Path = ROOT_DIR / "data" / REPO_NAME / "centrality"
+    CENTRALITY_CHANGE_DIR:    Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes"
+    L1_CENTRALITY_DIR:        Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "L1_norm"
     STABILITY_DATA_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "stability"
 
     CENTRALITY_CSV:         str = "centrality_scores.csv"
