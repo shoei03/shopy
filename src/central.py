@@ -164,9 +164,7 @@ class CalcCentrality:
             output_dir (Path): 出力先のディレクトリ
         """
         # 依存関係のJSONファイルを読み込む
-        file_dependency = self.json.read_json(
-            input_dir=(input_dir / "file_dependency.json")
-        )
+        file_dependency = self.json.read_json(input_dir=input_dir)
 
         # 中心性スコアを計算する
         graph = self.build_dependency_graph(file_dependency)
@@ -182,16 +180,14 @@ class CalcCentrality:
         )
 
         # 中心性スコアをCSVに保存
-        sorted_centrality_df.to_csv(
-            output_dir / path_config.CENTRALITY_CSV, index=False
-        )
+        sorted_centrality_df.to_csv(output_dir, index=False)
 
     def create_repo_metadata(
         self, input_dir: Path, start_date: str, end_date: str
     ) -> None:
         # リポジトリの月次データを取得
         commits = self.get_monthly_commits(
-            repo_path=path_config.REPO_DIR,
+            repo_path=input_dir,
             start_date=start_date,
             end_date=end_date,
         )
@@ -206,28 +202,8 @@ class CalcCentrality:
         )
         # CSVに保存
         repo_metadata_df.to_csv(
-            path_config.PROJECTS_DATA_DIR / "monthly_commits.csv",
+            path_config.PROJECTS_DATA_DIR / path_config.MONTHLY_COMMITS_CSV,
             index=False,
-        )
-
-    def save_centrality_changes(self, df_plot: pd.DataFrame, fqn: str) -> None:
-        sns.set(style="whitegrid")
-        plt.figure(figsize=(10, 6))
-        sns.lineplot(
-            data=df_plot,
-            x=path_config.COMMIT_DATE_COLUMNS,
-            y=path_config.CENTRALITY_COLUMNS,
-            marker="o",
-        )
-
-        plt.title(f"Time-series changes in the centrality score for {fqn} ")
-        plt.xlabel(path_config.COMMIT_DATE_COLUMNS)
-        plt.ylabel(path_config.CENTRALITY_COLUMNS)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.savefig(
-            path_config.CENTRALITY_DATA_DIR / fqn / path_config.CENTRALITY_CHANGES_PNG,
-            dpi=300,
         )
 
     def get_last_commit_date(self, repo_path: Path, limit_year: str) -> str:
@@ -249,14 +225,20 @@ class CalcCentrality:
 
         for subdir_name in sorted(self.get_child_dir(input_dir)):
             timestamp = pd.to_datetime(subdir_name, utc=True)
-            csv_path = input_dir / str(subdir_name) / "centrality_scores.csv"
+            csv_path = input_dir / str(subdir_name) / path_config.CENTRALITY_CSV
 
             if not csv_path.exists():
                 continue
 
             try:
-                df = pd.read_csv(csv_path, usecols=["FQN", "centrality_score"])
-                df["timestamp"] = str(timestamp)
+                df = pd.read_csv(
+                    csv_path,
+                    usecols=[
+                        path_config.FULL_PACKAGE_COLUMNS,
+                        path_config.CENTRALITY_COLUMNS,
+                    ],
+                )
+                df[path_config.COMMIT_DATA_KEY] = str(timestamp)
                 all_records.append(df)
             except Exception as e:
                 print(f"読み込みエラー: {csv_path} → {e}")
@@ -269,10 +251,12 @@ class CalcCentrality:
         combined = pd.concat(all_records, ignore_index=True)
 
         timeseries_df = combined.pivot(
-            index="FQN", columns="timestamp", values="centrality_score"
+            index=path_config.FULL_PACKAGE_COLUMNS,
+            columns=path_config.COMMIT_DATE_COLUMNS,
+            values=path_config.CENTRALITY_COLUMNS,
         ).sort_index(axis=1)
 
-        timeseries_df.to_csv(output_dir / "centrality_timeseries.csv")
+        timeseries_df.to_csv(output_dir)
 
     def sanitize_filename(self, name: str) -> str:
         """ファイル名に使えない文字を安全な形式に変換"""
@@ -309,13 +293,21 @@ class CalcCentrality:
 
             series = df.loc[fqn]
             data = pd.DataFrame(
-                {"timestamp": series.index, "centrality_score": series.values}
+                {
+                    path_config.COMMIT_DATA_KEY: series.index,
+                    path_config.CENTRALITY_COLUMNS: series.values,
+                }
             )
 
             # プロット設定
             sns.set(style="whitegrid")
             plt.figure(figsize=(10, 5))
-            sns.lineplot(data=data, x="timestamp", y="centrality_score", marker="o")
+            sns.lineplot(
+                data=data,
+                x=path_config.COMMIT_DATA_KEY,
+                y=path_config.CENTRALITY_COLUMNS,
+                marker="o",
+            )
             plt.title(f"Centrality Over Time\n{fqn}", fontsize=12)
             plt.xlabel("Time")
             plt.ylabel(path_config.CENTRALITY_COLUMNS)
@@ -327,8 +319,6 @@ class CalcCentrality:
             save_path = output_dir / f"{safe_name}.png"
             plt.savefig(save_path)
             plt.close()
-
-            print(f"保存しました: {save_path}")
 
     def main(self) -> None:
         # 2024年の最終コミット日時にリポジトリを戻す
@@ -350,7 +340,7 @@ class CalcCentrality:
 
         # # ファイルの依存関係を計算し、jsonで保存
         # repo_metadata_df = pd.read_csv(
-        #     path_config.PROJECTS_DATA_DIR / "monthly_commits.csv"
+        #     path_config.PROJECTS_DATA_DIR / path_config.MONTHLY_COMMITS_CSV,
         # )
         # filtered_dates: list[datetime] = repo_metadata_df[
         #     path_config.COMMIT_DATE_COLUMNS
@@ -368,7 +358,7 @@ class CalcCentrality:
         #         output_path: Path = (
         #             path_config.CENTRALITY_DATA_DIR
         #             / str(commit_date)
-        #             / "file_dependency.json"
+        #             / path_config.FILE_DEPENDENCY_JSON
         #         )
         #         self.build_dependency(
         #             max_files=20000,
@@ -388,27 +378,38 @@ class CalcCentrality:
         # filtered_dates: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
         # for commit_date in tqdm(
         #     filtered_dates, desc="中心性スコアを計算中", leave=False, dynamic_ncols=True
-        #     ):
-        #     input_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
-        #     output_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
+        # ):
+        #     input_dir: Path = (
+        #         path_config.CENTRALITY_DATA_DIR
+        #         / str(commit_date)
+        #         / path_config.FILE_DEPENDENCY_JSON
+        #     )
+        #     output_dir: Path = (
+        #         path_config.CENTRALITY_DATA_DIR
+        #         / str(commit_date)
+        #         / path_config.CENTRALITY_CSV
+        #     )
         #     self.create_centrality(input_dir=input_dir, output_dir=output_dir)
 
         # # 中心性スコアの時系列データを作成し、CSVに保存
         # self.load_centrality_timeseries(
         #     input_dir=path_config.CENTRALITY_DATA_DIR,
-        #     output_dir=path_config.EXISTING_FILES_DATA_DIR,
+        #     output_dir=path_config.EXISTING_FILES_DATA_DIR
+        #     / path_config.CENTRALITY_CHANGE_CSV,
         # )
 
         # 中心性スコアの時系列データを可視化
         self.plot_centrality_per_class(
             csv_path=(
-                path_config.EXISTING_FILES_DATA_DIR / "centrality_timeseries.csv"
+                path_config.EXISTING_FILES_DATA_DIR / path_config.CENTRALITY_CHANGE_CSV
             ),
             output_dir=path_config.L1_CENTRALITY_DIR,
             class_list=[
                 "org.springframework.aop.framework.adapter.AfterReturningAdviceAdapter",
-                "org.springframework.aop.framework.adapter.AfterReturningAdviceInterceptor",
-                "org.springframework.aop.framework.adapter.DefaultAdvisorAdapterRegistry",
+                "org.springframework.aop.aspectj.autoproxy.ExceptionHandlingAspect",
+                "org.springframework.aop.framework.ReflectiveMethodInvocation",
+                "org.springframework.aop.MethodBeforeAdvice",
+                "org.springframework.asm.AnnotationVisitor",
             ],
         )
 

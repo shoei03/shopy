@@ -25,14 +25,17 @@ class PathConfig:
     L1_CENTRALITY_DIR:        Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "L1_norm"
     STABILITY_DATA_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "stability"
 
+    MONTHLY_COMMITS_CSV:    str = "monthly_commits.csv"
+    FILE_DEPENDENCY_JSON:   str = "file_dependency.json"
     CENTRALITY_CSV:         str = "centrality_scores.csv"
-    CENTRALITY_CHANGES_PNG: str = "centrality_score_change.png"
+    CENTRALITY_CHANGE_CSV:  str = "centrality_timeseries.csv"
 
     EXISTING_FILE_COLUMNS:  str = "Existing File Path"
     DELETED_FILE_COLUMNS:   str = "Deleted File Path"
     IS_DELETED_COLUMNS:     str = "Is Deleted"
     COMMIT_ID_COLUMNS:      str = "Commit ID"
     COMMIT_DATE_COLUMNS:    str = "Commit Date"
+    COMMIT_DATA_KEY:        str = "timestamp"
     COMMIT_MESSAGE_COLUMNS: str = "Commit Message"
     CENTRALITY_COLUMNS:     str = "centrality_score"
     FULL_PACKAGE_COLUMNS:   str = "FQN"
