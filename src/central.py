@@ -236,6 +236,43 @@ class CalcCentrality:
         )
         return all_commits[-1]
 
+    def load_centrality_timeseries(self, input_dir: Path, output_dir: Path) -> None:
+        """
+        クラスごとの中心性スコアの時系列データフレームを作成する。
+        欠損値はNaNのままとする。
+
+        :param input_dir: 各時点の中心性スコアCSVが格納されたディレクトリ
+        :return: index=FQN, columns=timestamp, value=centrality_score のDataFrame
+        """
+        all_records = []
+
+        for subdir_name in sorted(self.get_child_dir(input_dir)):
+            timestamp = pd.to_datetime(subdir_name, utc=True)
+            csv_path = input_dir / str(subdir_name) / "centrality_scores.csv"
+
+            if not csv_path.exists():
+                continue
+
+            try:
+                df = pd.read_csv(csv_path, usecols=["FQN", "centrality_score"])
+                df["timestamp"] = str(timestamp)
+                all_records.append(df)
+            except Exception as e:
+                print(f"読み込みエラー: {csv_path} → {e}")
+
+        if not all_records:
+            raise FileNotFoundError(
+                "有効な centrality_scores.csv が見つかりませんでした。"
+            )
+
+        combined = pd.concat(all_records, ignore_index=True)
+
+        timeseries_df = combined.pivot(
+            index="FQN", columns="timestamp", values="centrality_score"
+        ).sort_index(axis=1)
+
+        timeseries_df.to_csv(output_dir / "centrality_timeseries.csv")
+
     def main(self) -> None:
         # 2024年の最終コミット日時にリポジトリを戻す
         last_commit_metadata: str = self.get_last_commit_date(
@@ -297,29 +334,11 @@ class CalcCentrality:
             output_dir: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
             self.create_centrality(input_dir=input_dir, output_dir=output_dir)
 
-        # data: list = []
-
-        # # 中心性スコアを取得
-        # centrality_df = pd.read_csv(output_dir / path_config.CENTRALITY_CSV)
-        # target_row = centrality_df[centrality_df["FQN"].str.endswith(str(fqn))]
-        # if not target_row.empty:
-        #     centrality_score = target_row[path_config.CENTRALITY_COLUMNS].iloc[
-        #         0
-        #     ]
-
-        #     data.append(
-        #         {
-        #             path_config.COMMIT_DATE_COLUMNS: commit_date,
-        #             path_config.CENTRALITY_COLUMNS: centrality_score,
-        #         }
-        #     )
-
-        # df_plot = pd.DataFrame(data)
-        # df_plot[path_config.COMMIT_DATE_COLUMNS] = pd.to_datetime(
-        #     df_plot[path_config.COMMIT_DATE_COLUMNS], utc=True
-        # )
-
-        # self.save_centrality_changes(df_plot, fqn)
+        # 中心性スコアの時系列データを作成し、CSVに保存
+        self.load_centrality_timeseries(
+            input_dir=path_config.CENTRALITY_DATA_DIR,
+            output_dir=path_config.EXISTING_FILES_DATA_DIR,
+        )
 
 
 if __name__ == "__main__":
