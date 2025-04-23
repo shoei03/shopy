@@ -286,7 +286,7 @@ class CalcCentrality:
                             cmd=f"git reset --hard {commit_hash}",
                             cwd=path_config.REPO_DIR,
                         )
-                        sleep(4)
+                        sleep(2)
 
                         # ファイルの依存関係を取得
                         file_dependency: dict = self.build_dependency(
