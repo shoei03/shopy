@@ -23,6 +23,16 @@ class PathConfig:
     CENTRALITY_DATA_DIR:      Path = ROOT_DIR / "data" / REPO_NAME / "centrality"
     CENTRALITY_CHANGE_DIR:    Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes"
     L1_CENTRALITY_DIR:        Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "L1_norm"
+    L2_CENTRALITY_DIR:        Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "L2_norm"
+    Z_CENTRALITY_DIR:         Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "Z_norm"
+    MIN_MAX_CENTRALITY_DIR:   Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "min_max"
+    LOG_CENTRALITY_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "centrality_changes" / "log"
+    CENTRALITY_MATRIX_DIR:    Path = ROOT_DIR / "data" / REPO_NAME / "centrality_matrix"
+    L1_CHANGE_CSV:            Path = ROOT_DIR / "data" / REPO_NAME / "centrality_matrix" / "timeseries_centrality_score.csv"
+    L2_CHANGE_CSV:            Path = ROOT_DIR / "data" / REPO_NAME / "centrality_matrix" / "timeseries_centrality_l2.csv"
+    Z_CHANGE_CSV:             Path = ROOT_DIR / "data" / REPO_NAME / "centrality_matrix" / "timeseries_centrality_z.csv"
+    LOG_CHANGE_CSV:           Path = ROOT_DIR / "data" / REPO_NAME / "centrality_matrix" / "timeseries_centrality_log.csv"
+    MIN_MAX_CHANGE_CSV:       Path = ROOT_DIR / "data" / REPO_NAME / "centrality_matrix" / "timeseries_centrality_min_max.csv"
     STABILITY_DATA_DIR:       Path = ROOT_DIR / "data" / REPO_NAME / "stability"
 
     MONTHLY_COMMITS_CSV:    str = "monthly_commits.csv"
@@ -39,6 +49,10 @@ class PathConfig:
     COMMIT_MESSAGE_COLUMNS: str = "Commit Message"
     CENTRALITY_COLUMNS:     str = "centrality_score"
     FULL_PACKAGE_COLUMNS:   str = "FQN"
+    CENTRALITY_L2_COLUMNS:  str = "centrality_l2"
+    CENTRALITY_Z_COLUMNS:   str = "centrality_z"
+    CENTRALITY_MIN_MAX_COLUMNS: str = "centrality_min_max"
+    CENTRALITY_LOG_COLUMNS: str = "centrality_log"
     
 
 

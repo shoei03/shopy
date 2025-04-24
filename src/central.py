@@ -1,10 +1,12 @@
 import re
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep
 
 import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
 import pandas as pd
 import seaborn as sns
 from dateutil.relativedelta import relativedelta
@@ -17,6 +19,57 @@ class CalcCentrality:
     def __init__(self):
         self.shell_command = ShellCommand()
         self.json = JSON()
+        self.git_command = GitCommand()
+        self.util_func = UtilFunc()
+
+    def write_repo_metadata(
+        self, input_dir: Path, start_date: str, end_date: str, output_dir: Path
+    ) -> None:
+        """リポジトリの月次データを取得し、CSVに保存する
+
+        Args:
+            input_dir (Path): リポジトリまでのパス
+            start_date (str): 収集の開始日
+            end_date (str): 収集の終了日
+        """
+        # リポジトリの月次データを取得
+        filtered_hashes, filtered_dates = self.git_command.get_monthly_commits(
+            repo_path=input_dir,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        # CSVに保存
+        repo_metadata_df = pd.DataFrame(
+            {
+                path_config.COMMIT_DATE_COLUMNS: filtered_dates,
+                path_config.COMMIT_ID_COLUMNS: filtered_hashes,
+            }
+        )
+        repo_metadata_df.to_csv(
+            output_dir,
+            index=False,
+        )
+
+    def read_repo_metadata(self, input_dir: Path) -> tuple[list[str], list[str]]:
+        """リポジトリの月次データを取得する
+
+        Args:
+            input_dir (Path): リポジトリまでのパス
+
+        Returns:
+            tuple: コミットハッシュとコミット日時のリスト
+        """
+        repo_metadata_df = pd.read_csv(
+            input_dir,
+        )
+        filtered_dates: list[datetime] = repo_metadata_df[
+            path_config.COMMIT_DATE_COLUMNS
+        ].tolist()
+        filtered_hashes: list[str] = repo_metadata_df[
+            path_config.COMMIT_ID_COLUMNS
+        ].tolist()
+
+        return filtered_hashes, filtered_dates
 
     def build_dependency(
         self,
@@ -37,11 +90,10 @@ class CalcCentrality:
             dict: ファイルの依存関係
         """
         # コミットハッシュの状態にリポジトリを戻す
-        self.shell_command.run_cmd(
-            cmd=f"git reset --hard {state}",
-            cwd=path_config.REPO_DIR,
+        self.git_command.reset_repo_state(
+            repo_path=path_config.REPO_DIR,
+            commit_hash=state,
         )
-        sleep(2)
 
         # ファイル情報を取得
         ef = ExtractFilesInfo(path_config.REPO_DIR, path_config.DATA_DIR)
@@ -100,167 +152,116 @@ class CalcCentrality:
 
         return G
 
-    def get_monthly_commits(
-        self,
-        repo_path: str,
-        branch: str = "main",
-        start_date: str = "2023-01-01",
-        end_date: str = "2024-12-31",
-    ) -> dict[str, tuple[str, str]]:
-        """
-        各月の最後のコミットのハッシュとUTCのISO形式日時を取得する
-
-        Returns:
-            dict[str, tuple[commit_hash, commit_date]]
-        """
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-
-        monthly_commits: dict[str, tuple[str, str]] = {}
-        current = start
-
-        while current <= end:
-            next_month = current + relativedelta(months=1)
-            since = current.strftime("%Y-%m-%d")
-            until = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
-
-            cmd = (
-                f"git log {branch} "
-                f'--after="{since}" --before="{until}" '
-                f"--pretty=format:'%H|%aI' --reverse"
-            )
-
-            commits = self.shell_command.run_cmd(cmd, cwd=repo_path)
-            if commits:
-                last_commit_line = commits[-1]
-                if "|" in last_commit_line:
-                    commit_hash, commit_date = last_commit_line.split("|", 1)
-                    commit_date_utc = datetime.fromisoformat(commit_date).astimezone(
-                        timezone.utc
-                    )
-                    monthly_key = since[:7]
-                    monthly_commits[monthly_key] = (commit_hash, commit_date_utc)
-
-            current = next_month
-
-        return monthly_commits
-
-    def get_child_dir(self, path: Path) -> list[Path]:
-        """指定したパスの子ディレクトリを取得する
-
-        Args:
-            path (Path): 対象のパス
-
-        Returns:
-            list[Path]: 子ディレクトリのリスト
-        """
-        return [p.name for p in path.iterdir() if p.is_dir()]
-
-    def create_centrality(self, input_dir: Path, output_dir: Path) -> None:
+    def write_centrality(self, file_dependency: dict, output_dir: Path) -> None:
         """中心性を計算し、CSVに保存する
 
         Args:
             input_dir (Path): 依存関係が記述されたJSONファイルのパス
             output_dir (Path): 出力先のディレクトリ
         """
-        # 依存関係のJSONファイルを読み込む
-        file_dependency = self.json.read_json(input_dir=input_dir)
-
-        # 中心性スコアを計算する
+        # グラフ構築
         graph = self.build_dependency_graph(file_dependency)
         centrality = nx.pagerank(graph)
-        centrality_df = pd.DataFrame(
+
+        # DataFrame化
+        df = pd.DataFrame(
             {
-                path_config.CENTRALITY_COLUMNS: centrality.values(),
-                path_config.FULL_PACKAGE_COLUMNS: centrality.keys(),
+                path_config.FULL_PACKAGE_COLUMNS: list(centrality.keys()),
+                path_config.CENTRALITY_COLUMNS: list(centrality.values()),
             }
         )
-        sorted_centrality_df = centrality_df.sort_values(
-            by=path_config.CENTRALITY_COLUMNS, ascending=False
+
+        score_col = path_config.CENTRALITY_COLUMNS
+        original_scores = df[score_col]
+
+        # 1. L2正規化
+        l2_norm = np.linalg.norm(original_scores)
+        df[path_config.CENTRALITY_L2_COLUMNS] = (
+            original_scores / l2_norm if l2_norm != 0 else 0
         )
 
-        # 中心性スコアをCSVに保存
-        sorted_centrality_df.to_csv(output_dir, index=False)
-
-    def create_repo_metadata(
-        self, input_dir: Path, start_date: str, end_date: str
-    ) -> None:
-        # リポジトリの月次データを取得
-        commits = self.get_monthly_commits(
-            repo_path=input_dir,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        sorted_months = sorted(commits.keys())
-        filtered_hashes = [commits[month][0] for month in sorted_months]
-        filtered_dates = [commits[month][1] for month in sorted_months]
-        repo_metadata_df = pd.DataFrame(
-            {
-                path_config.COMMIT_DATE_COLUMNS: filtered_dates,
-                path_config.COMMIT_ID_COLUMNS: filtered_hashes,
-            }
-        )
-        # CSVに保存
-        repo_metadata_df.to_csv(
-            path_config.PROJECTS_DATA_DIR / path_config.MONTHLY_COMMITS_CSV,
-            index=False,
+        # 2. Zスコア標準化
+        mean = original_scores.mean()
+        std = original_scores.std()
+        df[path_config.CENTRALITY_Z_COLUMNS] = (
+            (original_scores - mean) / std if std != 0 else 0
         )
 
-    def get_last_commit_date(self, repo_path: Path, limit_year: str) -> str:
-        all_commits: list[str] = self.shell_command.run_cmd(
-            cmd=f"git log --before={limit_year}-01-01T00:00:00+00:00 --pretty=format:'%H|%aI' --reverse",
-            cwd=repo_path,
+        # 3. Min-Max正規化
+        min_val = original_scores.min()
+        max_val = original_scores.max()
+        df[path_config.CENTRALITY_MIN_MAX_COLUMNS] = (
+            (original_scores - min_val) / (max_val - min_val)
+            if max_val != min_val
+            else 0
         )
-        return all_commits[-1]
+
+        # 4. ログスケール（log1p = log(1 + x), 0の処理も安全）
+        df[path_config.CENTRALITY_LOG_COLUMNS] = np.log1p(original_scores)
+
+        # スコアで降順ソート
+        df_sorted = df.sort_values(by=score_col, ascending=False)
+
+        # 保存先ディレクトリの作成
+        output_dir.parent.mkdir(parents=True, exist_ok=True)
+        df_sorted.to_csv(output_dir, index=False)
 
     def load_centrality_timeseries(self, input_dir: Path, output_dir: Path) -> None:
+        """クラスごとの中心性スコアの時系列データを作成し、CSVに保存
+
+        Args:
+            input_dir (Path): 各時点の中心性スコアが保存されたディレクトリ
+            output_dir (Path): 出力先のディレクトリ
         """
-        クラスごとの中心性スコアの時系列データフレームを作成する。
-        欠損値はNaNのままとする。
+        # スコア名ごとの一時保存用辞書
+        score_records: dict[str, list[pd.DataFrame]] = defaultdict(list)
 
-        :param input_dir: 各時点の中心性スコアCSVが格納されたディレクトリ
-        :return: index=FQN, columns=timestamp, value=centrality_score のDataFrame
-        """
-        all_records = []
-
-        for subdir_name in sorted(self.get_child_dir(input_dir)):
-            timestamp = pd.to_datetime(subdir_name, utc=True)
-            csv_path = input_dir / str(subdir_name) / path_config.CENTRALITY_CSV
-
-            if not csv_path.exists():
+        for subdir in sorted(self.util_func.get_child_dir(input_dir)):
+            try:
+                timestamp = pd.to_datetime(subdir, utc=True)
+            except Exception:
+                print(f"スキップ（無効な日付）: {subdir}")
                 continue
 
+            input_csv = input_dir / str(timestamp) / path_config.CENTRALITY_CSV
+
             try:
-                df = pd.read_csv(
-                    csv_path,
-                    usecols=[
-                        path_config.FULL_PACKAGE_COLUMNS,
-                        path_config.CENTRALITY_COLUMNS,
-                    ],
-                )
-                df[path_config.COMMIT_DATA_KEY] = str(timestamp)
-                all_records.append(df)
+                df = pd.read_csv(input_csv)
+
+                if path_config.FULL_PACKAGE_COLUMNS not in df.columns:
+                    print(
+                        f"警告: {input_csv} に '{path_config.FULL_PACKAGE_COLUMNS}' 列が存在しません。"
+                    )
+                    continue
+
+                # "centrality_" で始まる列を抽出
+                score_columns = [
+                    col for col in df.columns if col.startswith("centrality_")
+                ]
+
+                for score_col in score_columns:
+                    temp_df = df[[path_config.FULL_PACKAGE_COLUMNS, score_col]].copy()
+                    temp_df[path_config.COMMIT_DATA_KEY] = timestamp.isoformat()
+                    score_records[score_col].append(temp_df)
+
             except Exception as e:
-                print(f"読み込みエラー: {csv_path} → {e}")
+                print(f"読み込みエラー: {input_csv} → {e}")
+                continue
 
-        if not all_records:
-            raise FileNotFoundError(
-                "有効な centrality_scores.csv が見つかりませんでした。"
-            )
+        # 出力ディレクトリの作成
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        combined = pd.concat(all_records, ignore_index=True)
+        for score_col, dataframes in score_records.items():
+            combined_df = pd.concat(dataframes, ignore_index=True)
 
-        timeseries_df = combined.pivot(
-            index=path_config.FULL_PACKAGE_COLUMNS,
-            columns=path_config.COMMIT_DATE_COLUMNS,
-            values=path_config.CENTRALITY_COLUMNS,
-        ).sort_index(axis=1)
+            timeseries_df = combined_df.pivot(
+                index=path_config.FULL_PACKAGE_COLUMNS,
+                columns=path_config.COMMIT_DATA_KEY,
+                values=score_col,
+            ).sort_index(axis=1)
 
-        timeseries_df.to_csv(output_dir)
-
-    def sanitize_filename(self, name: str) -> str:
-        """ファイル名に使えない文字を安全な形式に変換"""
-        return re.sub(r'[\\/*?:"<>|]', "_", name)
+            output_csv = output_dir / f"timeseries_{score_col}.csv"
+            timeseries_df.to_csv(output_csv)
 
     def plot_centrality_per_class(
         self,
@@ -315,39 +316,35 @@ class CalcCentrality:
             plt.tight_layout()
 
             # ファイル名を安全に生成して保存
-            safe_name = self.sanitize_filename(fqn)
+            safe_name = self.util_func.sanitize_filename(fqn)
             save_path = output_dir / f"{safe_name}.png"
             plt.savefig(save_path)
             plt.close()
 
     def main(self) -> None:
-        # 2024年の最終コミット日時にリポジトリを戻す
-        last_commit_metadata: str = self.get_last_commit_date(
-            repo_path=path_config.REPO_DIR, limit_year="2025"
-        )
-        last_commit_hash: str = last_commit_metadata.split("|")[0]
-        self.shell_command.run_cmd(
-            cmd=f"git reset --hard {last_commit_hash}", cwd=path_config.REPO_DIR
-        )
-        sleep(2)
+        # # 2024年の最終コミット日時にリポジトリを戻す
+        # last_commit_hash, _ = self.git_command.get_last_commit_date(
+        #     repo_path=path_config.REPO_DIR, limit_year="2025"
+        # )
+        # self.git_command.reset_repo_state(
+        #     repo_path=path_config.REPO_DIR,
+        #     commit_hash=last_commit_hash,
+        # )
 
         # # リポジトリの月次データを取得し、CSVに保存
-        # self.create_repo_metadata(
+        # self.write_repo_metadata(
         #     input_dir=path_config.REPO_DIR,
         #     start_date="2008-01-01",
         #     end_date="2024-12-31",
+        #     output_dir=path_config.PROJECTS_DATA_DIR / path_config.MONTHLY_COMMITS_CSV,
+        # )
+
+        # # リポジトリの月次データを読み込み
+        # filtered_hashes, filtered_dates = self.read_repo_metadata(
+        #     input_dir=path_config.PROJECTS_DATA_DIR / path_config.MONTHLY_COMMITS_CSV
         # )
 
         # # ファイルの依存関係を計算し、jsonで保存
-        # repo_metadata_df = pd.read_csv(
-        #     path_config.PROJECTS_DATA_DIR / path_config.MONTHLY_COMMITS_CSV,
-        # )
-        # filtered_dates: list[datetime] = repo_metadata_df[
-        #     path_config.COMMIT_DATE_COLUMNS
-        # ].tolist()
-        # filtered_hashes: list[str] = repo_metadata_df[
-        #     path_config.COMMIT_ID_COLUMNS
-        # ].tolist()
         # for commit_hash, commit_date in tqdm(
         #     zip(filtered_hashes, filtered_dates),
         #     desc="特定のコミットを処理中",
@@ -355,63 +352,140 @@ class CalcCentrality:
         #     leave=False,
         # ):
         #     try:
-        #         output_path: Path = (
-        #             path_config.CENTRALITY_DATA_DIR
-        #             / str(commit_date)
-        #             / path_config.FILE_DEPENDENCY_JSON
-        #         )
-        #         self.build_dependency(
-        #             max_files=20000,
-        #             input_dir=path_config.REPO_DIR,
-        #             language="java",
-        #             output_dir=output_path,
-        #             state=commit_hash,
-        #         )
+        # output_path: Path = path_config.CENTRALITY_DATA_DIR / str(commit_date)
 
-        #     except Exception as e:
-        #         print(
-        #             f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
-        #         )
-        #         continue
-
-        # # 中心性スコアを計算し、CSVに保存
-        # filtered_dates: list[Path] = self.get_child_dir(path_config.CENTRALITY_DATA_DIR)
-        # for commit_date in tqdm(
-        #     filtered_dates, desc="中心性スコアを計算中", leave=False, dynamic_ncols=True
-        # ):
-        #     input_dir: Path = (
-        #         path_config.CENTRALITY_DATA_DIR
-        #         / str(commit_date)
-        #         / path_config.FILE_DEPENDENCY_JSON
-        #     )
-        #     output_dir: Path = (
-        #         path_config.CENTRALITY_DATA_DIR
-        #         / str(commit_date)
-        #         / path_config.CENTRALITY_CSV
-        #     )
-        #     self.create_centrality(input_dir=input_dir, output_dir=output_dir)
-
-        # # 中心性スコアの時系列データを作成し、CSVに保存
-        # self.load_centrality_timeseries(
-        #     input_dir=path_config.CENTRALITY_DATA_DIR,
-        #     output_dir=path_config.EXISTING_FILES_DATA_DIR
-        #     / path_config.CENTRALITY_CHANGE_CSV,
+        # # 依存関係を構築し、jsonで保存(この処理は非常に時間がかかる)
+        # self.build_dependency(
+        #     max_files=20000,
+        #     input_dir=path_config.REPO_DIR,
+        #     language="java",
+        #     output_dir=(output_path / path_config.FILE_DEPENDENCY_JSON),
+        #     state=commit_hash,
         # )
 
-        # 中心性スコアの時系列データを可視化
-        self.plot_centrality_per_class(
-            csv_path=(
-                path_config.EXISTING_FILES_DATA_DIR / path_config.CENTRALITY_CHANGE_CSV
-            ),
-            output_dir=path_config.L1_CENTRALITY_DIR,
-            class_list=[
-                "org.springframework.aop.framework.adapter.AfterReturningAdviceAdapter",
-                "org.springframework.aop.aspectj.autoproxy.ExceptionHandlingAspect",
-                "org.springframework.aop.framework.ReflectiveMethodInvocation",
-                "org.springframework.aop.MethodBeforeAdvice",
-                "org.springframework.asm.AnnotationVisitor",
-            ],
+        # # 依存関係のjsonを読み込み
+        # file_dependency = self.json.read_json(
+        #     input_dir=(output_path / path_config.FILE_DEPENDENCY_JSON)
+        # )
+
+        # # 依存関係から中心性を計算し、csvで保存
+        # self.write_centrality(
+        #     file_dependency=file_dependency,
+        #     output_dir=(output_path / path_config.CENTRALITY_CSV),
+        # )
+
+        # except Exception as e:
+        #     print(
+        #         f"[ERROR] コミット処理中にエラーが発生しました。 {commit_hash}: {e}"
+        #     )
+        #     continue
+
+        # 中心性スコアの時系列データを作成し、CSVに保存
+        self.load_centrality_timeseries(
+            input_dir=path_config.CENTRALITY_DATA_DIR,
+            output_dir=path_config.CENTRALITY_MATRIX_DIR,
         )
+
+        # # 中心性スコアの時系列データを可視化
+        # # Todo: for文で回す
+        # self.plot_centrality_per_class(
+        #     csv_path=(path_config.L1_CHANGE_CSV),
+        #     output_dir=path_config.L1_CENTRALITY_DIR,
+        #     class_list=[
+        #         "org.springframework.aop.framework.adapter.AfterReturningAdviceAdapter",
+        #         "org.springframework.aop.aspectj.autoproxy.ExceptionHandlingAspect",
+        #         "org.springframework.aop.framework.ReflectiveMethodInvocation",
+        #         "org.springframework.aop.MethodBeforeAdvice",
+        #         "org.springframework.asm.AnnotationVisitor",
+        #     ],
+        # )
+
+
+class GitCommand:
+    def __init__(self):
+        self.shell_command = ShellCommand()
+
+    def get_monthly_commits(
+        self,
+        repo_path: str,
+        branch: str = "main",
+        start_date: str = "2023-01-01",
+        end_date: str = "2024-12-31",
+    ) -> tuple[str, str]:
+        """
+        各月の最後のコミットのハッシュとUTCのISO形式日時を取得する
+
+        Returns:
+            dict[str, tuple[commit_hash, commit_date]]
+        """
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+
+        monthly_commits: dict[str, tuple[str, str]] = {}
+        current = start
+
+        while current <= end:
+            next_month = current + relativedelta(months=1)
+            since = current.strftime("%Y-%m-%d")
+            until = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            cmd = (
+                f"git log {branch} "
+                f'--after="{since}" --before="{until}" '
+                f"--pretty=format:'%H|%aI' --reverse"
+            )
+
+            commits = self.shell_command.run_cmd(cmd, cwd=repo_path)
+            if commits:
+                last_commit_line = commits[-1]
+                if "|" in last_commit_line:
+                    commit_hash, commit_date = last_commit_line.split("|", 1)
+                    commit_date_utc = datetime.fromisoformat(commit_date).astimezone(
+                        timezone.utc
+                    )
+                    monthly_key = since[:7]
+                    monthly_commits[monthly_key] = (commit_hash, commit_date_utc)
+
+            current = next_month
+
+            sorted_months = sorted(monthly_commits.keys())
+            filtered_hashes = [monthly_commits[month][0] for month in sorted_months]
+            filtered_dates = [monthly_commits[month][1] for month in sorted_months]
+
+        return filtered_hashes, filtered_dates
+
+    def get_last_commit_date(self, repo_path: Path, limit_year: str) -> tuple[str, str]:
+        all_commits: list[str] = self.shell_command.run_cmd(
+            cmd=f"git log --before={limit_year}-01-01T00:00:00+00:00 --pretty=format:'%H|%aI' --reverse",
+            cwd=repo_path,
+        )
+        last_commit_hash: str = all_commits[-1].split("|")[0]
+        last_commit_date: str = all_commits[-1].split("|")[1]
+        return last_commit_hash, last_commit_date
+
+    def reset_repo_state(self, repo_path: Path, commit_hash: str) -> None:
+        self.shell_command.run_cmd(cmd=f"git reset --hard {commit_hash}", cwd=repo_path)
+        sleep(2)
+
+
+class UtilFunc:
+    def __init__(self):
+        pass
+
+    def get_child_dir(self, path: Path) -> list[Path]:
+        """指定したパスの子ディレクトリを取得する
+
+        Args:
+            path (Path): 対象のパス
+
+        Returns:
+            list[Path]: 子ディレクトリのリスト
+        """
+        return [p.name for p in path.iterdir() if p.is_dir()]
+
+    def sanitize_filename(self, name: str) -> str:
+        """ファイル名に使えない文字を安全な形式に変換"""
+        return re.sub(r'[\\/*?:"<>|]', "_", name)
 
 
 if __name__ == "__main__":
