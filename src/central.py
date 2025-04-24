@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
-import seaborn as sns
 from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
 
@@ -260,66 +259,68 @@ class CalcCentrality:
                 values=score_col,
             ).sort_index(axis=1)
 
-            output_csv = output_dir / f"timeseries_{score_col}.csv"
+            output_csv = output_dir / f"{score_col}.csv"
             timeseries_df.to_csv(output_csv)
 
-    def plot_centrality_per_class(
-        self,
-        csv_path: Path,
-        output_dir: Path,
-        class_list: list[str],
+    def plot_all_centralities_per_class(
+        self, centrality_dir: Path, output_base_dir: Path
     ) -> None:
+        """中心性スコアの時系列データを可視化する
+
+        Args:
+            centrality_dir (Path): 中心性スコアの時系列データが保存されたディレクトリ
+            output_base_dir (Path): 出力先のディレクトリ
         """
-        各クラスごとに中心性スコアの時系列グラフを作成し、個別に画像保存する。
+        csv_paths = sorted(centrality_dir.glob("*.csv"))
 
-        :param csv_path: centrality_timeseries.csv のパス
-        :param output_dir: 保存先ディレクトリ
-        :param class_list: 可視化対象のクラスFQNのリスト
-        """
-        # データ読み込みと整形
-        df = pd.read_csv(csv_path, index_col=0)
-        df.columns = pd.to_datetime(df.columns)
+        for csv_path in csv_paths:
+            score_name = csv_path.stem
+            df = pd.read_csv(csv_path, index_col=0)
+            df.columns = pd.to_datetime(df.columns)
 
-        output_dir.mkdir(parents=True, exist_ok=True)
+            # クラス名（FQN）一覧を抽出
+            class_list = df.index.tolist()
 
-        for fqn in tqdm(
-            class_list,
-            desc="クラスごとの中心性スコアをプロット中",
-            leave=True,
-            dynamic_ncols=True,
-        ):
-            if fqn not in df.index:
-                print(f"スキップ（存在しないクラス）: {fqn}")
-                continue
+            output_dir = output_base_dir / score_name
+            output_dir.mkdir(parents=True, exist_ok=True)
 
-            series = df.loc[fqn]
-            data = pd.DataFrame(
-                {
-                    path_config.COMMIT_DATA_KEY: series.index,
-                    path_config.CENTRALITY_COLUMNS: series.values,
-                }
-            )
+            for fqn in tqdm(
+                class_list,
+                desc=f"{score_name} をプロット中",
+                leave=True,
+                dynamic_ncols=True,
+            ):
+                series = df.loc[fqn]
+                data = pd.DataFrame(
+                    {
+                        path_config.COMMIT_DATA_KEY: series.index,
+                        score_name: series.values,
+                    }
+                )
 
-            # プロット設定
-            sns.set(style="whitegrid")
-            plt.figure(figsize=(10, 5))
-            sns.lineplot(
-                data=data,
-                x=path_config.COMMIT_DATA_KEY,
-                y=path_config.CENTRALITY_COLUMNS,
-                marker="o",
-            )
-            plt.title(f"Centrality Over Time\n{fqn}", fontsize=12)
-            plt.xlabel("Time")
-            plt.ylabel(path_config.CENTRALITY_COLUMNS)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
+                plt.figure(figsize=(10, 5))
+                plt.plot(
+                    data[path_config.COMMIT_DATA_KEY],
+                    data[score_name],
+                    color="lightblue",
+                    marker="o",
+                    linestyle="-",
+                    markersize=4,  # 点の大きさを小さく
+                )
 
-            # ファイル名を安全に生成して保存
-            safe_name = self.util_func.sanitize_filename(fqn)
-            save_path = output_dir / f"{safe_name}.png"
-            plt.savefig(save_path)
-            plt.close()
+                plt.title(
+                    f"{score_name} Over Time\n{fqn}", fontsize=14
+                )  # タイトルサイズ大
+                plt.xlabel("Time", fontsize=12)  # ラベルサイズ中
+                plt.ylabel(score_name, fontsize=12)
+                plt.xticks(rotation=45, fontsize=10)  # 目盛サイズ
+                plt.yticks(fontsize=10)
+                plt.tight_layout()
+
+                safe_name = self.util_func.sanitize_filename(fqn)
+                save_path = output_dir / f"{safe_name}.png"
+                plt.savefig(save_path)
+                plt.close()
 
     def main(self) -> None:
         # # 2024年の最終コミット日時にリポジトリを戻す
@@ -380,25 +381,17 @@ class CalcCentrality:
         #     )
         #     continue
 
-        # 中心性スコアの時系列データを作成し、CSVに保存
-        self.load_centrality_timeseries(
-            input_dir=path_config.CENTRALITY_DATA_DIR,
-            output_dir=path_config.CENTRALITY_MATRIX_DIR,
-        )
-
-        # # 中心性スコアの時系列データを可視化
-        # # Todo: for文で回す
-        # self.plot_centrality_per_class(
-        #     csv_path=(path_config.L1_CHANGE_CSV),
-        #     output_dir=path_config.L1_CENTRALITY_DIR,
-        #     class_list=[
-        #         "org.springframework.aop.framework.adapter.AfterReturningAdviceAdapter",
-        #         "org.springframework.aop.aspectj.autoproxy.ExceptionHandlingAspect",
-        #         "org.springframework.aop.framework.ReflectiveMethodInvocation",
-        #         "org.springframework.aop.MethodBeforeAdvice",
-        #         "org.springframework.asm.AnnotationVisitor",
-        #     ],
+        # # 中心性スコアの時系列データを作成し、CSVに保存
+        # self.load_centrality_timeseries(
+        #     input_dir=path_config.CENTRALITY_DATA_DIR,
+        #     output_dir=path_config.CENTRALITY_MATRIX_DIR,
         # )
+
+        # 中心性スコアの時系列データを可視化
+        self.plot_all_centralities_per_class(
+            centrality_dir=path_config.CENTRALITY_MATRIX_DIR,
+            output_base_dir=path_config.CENTRALITY_CHANGE_DIR,
+        )
 
 
 class GitCommand:
