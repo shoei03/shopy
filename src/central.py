@@ -309,7 +309,7 @@ class CalcCentrality:
                 )
 
                 plt.title(
-                    f"{score_name} Over Time\n{fqn}", fontsize=14
+                    f"{score_name} Over Time\n{fqn}".replace("$", "\\$"), fontsize=14
                 )  # タイトルサイズ大
                 plt.xlabel("Time", fontsize=12)  # ラベルサイズ中
                 plt.ylabel(score_name, fontsize=12)
