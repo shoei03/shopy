@@ -17,7 +17,6 @@ from shopy import JSON, ExtractFilesInfo, GetName, ShellCommand, path_config
 class CalcCentrality:
     def __init__(self):
         self.shell_command = ShellCommand()
-        self.json = JSON()
         self.git_command = GitCommand()
 
     def write_repo_metadata(
@@ -122,7 +121,7 @@ class CalcCentrality:
         }
 
         processed_file_dependency = {str(k): v for k, v in file_dependency.items()}
-        self.json.write_json(
+        sp.write_json(
             dict=processed_file_dependency,
             output_dir=output_dir,
         )
@@ -364,7 +363,7 @@ class CalcCentrality:
         # )
 
         # # 依存関係のjsonを読み込み
-        # file_dependency = self.json.read_json(
+        # file_dependency = sp.read_json(
         #     input_dir=(output_path / path_config.FILE_DEPENDENCY_JSON)
         # )
 
