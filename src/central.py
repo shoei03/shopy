@@ -1,4 +1,3 @@
-import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +10,7 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
 
+import shopy as sp
 from shopy import JSON, ExtractFilesInfo, GetName, ShellCommand, path_config
 
 
@@ -19,7 +19,6 @@ class CalcCentrality:
         self.shell_command = ShellCommand()
         self.json = JSON()
         self.git_command = GitCommand()
-        self.util_func = UtilFunc()
 
     def write_repo_metadata(
         self, input_dir: Path, start_date: str, end_date: str, output_dir: Path
@@ -215,7 +214,7 @@ class CalcCentrality:
         # スコア名ごとの一時保存用辞書
         score_records: dict[str, list[pd.DataFrame]] = defaultdict(list)
 
-        for subdir in sorted(self.util_func.get_child_dir(input_dir)):
+        for subdir in sorted(sp.get_child_dir(input_dir)):
             try:
                 timestamp = pd.to_datetime(subdir, utc=True)
             except Exception:
@@ -317,7 +316,7 @@ class CalcCentrality:
                 plt.yticks(fontsize=10)
                 plt.tight_layout()
 
-                safe_name = self.util_func.sanitize_filename(fqn)
+                safe_name = sp.sanitize_filename(fqn)
                 save_path = output_dir / f"{safe_name}.png"
                 plt.savefig(save_path)
                 plt.close()
@@ -459,26 +458,6 @@ class GitCommand:
     def reset_repo_state(self, repo_path: Path, commit_hash: str) -> None:
         self.shell_command.run_cmd(cmd=f"git reset --hard {commit_hash}", cwd=repo_path)
         sleep(2)
-
-
-class UtilFunc:
-    def __init__(self):
-        pass
-
-    def get_child_dir(self, path: Path) -> list[Path]:
-        """指定したパスの子ディレクトリを取得する
-
-        Args:
-            path (Path): 対象のパス
-
-        Returns:
-            list[Path]: 子ディレクトリのリスト
-        """
-        return [p.name for p in path.iterdir() if p.is_dir()]
-
-    def sanitize_filename(self, name: str) -> str:
-        """ファイル名に使えない文字を安全な形式に変換"""
-        return re.sub(r'[\\/*?:"<>|]', "_", name)
 
 
 if __name__ == "__main__":
