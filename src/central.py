@@ -278,6 +278,12 @@ class CalcCentrality:
             output_dir = output_base_dir / score_name
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            # === 軸範囲の計算 ===
+            all_x = df.columns
+            min_x, max_x = all_x.min(), all_x.max()
+
+            min_y, max_y = df.min().min(), 0.05
+
             for fqn in tqdm(
                 class_list,
                 desc=f"{score_name} をプロット中",
@@ -309,6 +315,9 @@ class CalcCentrality:
                 plt.ylabel(score_name, fontsize=12)
                 plt.xticks(rotation=45, fontsize=10)  # 目盛サイズ
                 plt.yticks(fontsize=10)
+                plt.yscale("log")  # Y軸を対数スケールに設定
+                plt.xlim(min_x, max_x)
+                plt.ylim(min_y, max_y)
                 plt.tight_layout()
 
                 safe_name = sp.sanitize_filename(fqn)
