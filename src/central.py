@@ -11,12 +11,11 @@ from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
 
 import shopy as sp
-from shopy import JSON, ExtractFilesInfo, GetName, ShellCommand, path_config
+from shopy import ExtractFilesInfo, GetName, path_config
 
 
 class CalcCentrality:
     def __init__(self):
-        self.shell_command = ShellCommand()
         self.git_command = GitCommand()
 
     def write_repo_metadata(
@@ -393,9 +392,6 @@ class CalcCentrality:
 
 
 class GitCommand:
-    def __init__(self):
-        self.shell_command = ShellCommand()
-
     def get_monthly_commits(
         self,
         repo_path: str,
@@ -426,7 +422,7 @@ class GitCommand:
                 f"--pretty=format:'%H|%aI' --reverse"
             )
 
-            commits = self.shell_command.run_cmd(cmd, cwd=repo_path)
+            commits = sp.run_cmd(cmd, cwd=repo_path)
             if commits:
                 last_commit_line = commits[-1]
                 if "|" in last_commit_line:
@@ -446,7 +442,7 @@ class GitCommand:
         return filtered_hashes, filtered_dates
 
     def get_last_commit_date(self, repo_path: Path, limit_year: str) -> tuple[str, str]:
-        all_commits: list[str] = self.shell_command.run_cmd(
+        all_commits: list[str] = sp.run_cmd(
             cmd=f"git log --before={limit_year}-01-01T00:00:00+00:00 --pretty=format:'%H|%aI' --reverse",
             cwd=repo_path,
         )
@@ -455,7 +451,7 @@ class GitCommand:
         return last_commit_hash, last_commit_date
 
     def reset_repo_state(self, repo_path: Path, commit_hash: str) -> None:
-        self.shell_command.run_cmd(cmd=f"git reset --hard {commit_hash}", cwd=repo_path)
+        sp.run_cmd(cmd=f"git reset --hard {commit_hash}", cwd=repo_path)
         sleep(2)
 
 

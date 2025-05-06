@@ -1,4 +1,4 @@
-from shopy.cmd import GitHash, GitReset, ShellCommand
+from shopy.cmd import GitHash, GitReset, run_cmd
 from shopy.config import path_config
 from shopy.metrics import CalcMetrics, StoreFiles
 from shopy.search import ExtractFilesInfo
