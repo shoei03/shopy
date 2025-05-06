@@ -14,6 +14,6 @@ def get_child_dir(path: Path) -> list[Path]:
     return [p.name for p in path.iterdir() if p.is_dir()]
 
 
-def sanitize_filename(self, name: str) -> str:
+def sanitize_filename(name: str) -> str:
     """ファイル名に使えない文字を安全な形式に変換"""
     return re.sub(r'[\\/*?:"<>|]', "_", name)

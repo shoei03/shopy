@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 
-def write_json(self, dict: dict, output_dir: Path) -> None:
+def write_json(dict: dict, output_dir: Path) -> None:
     """
     JSONファイルを書き込む
     Args:
@@ -14,7 +14,7 @@ def write_json(self, dict: dict, output_dir: Path) -> None:
         json.dump(dict, f, ensure_ascii=False, indent=4)
 
 
-def read_json(self, input_dir: Path) -> dict:
+def read_json(input_dir: Path) -> dict:
     """
     JSONファイルを読み込む
     Args:

@@ -1,7 +1,7 @@
 import subprocess
 
 
-def run_cmd(self, cmd: str, cwd: str) -> str:
+def run_cmd(cmd: str, cwd: str) -> str:
     """シェルコマンドを実行し、結果を返す
 
     Args:
