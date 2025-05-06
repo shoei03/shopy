@@ -1,26 +1,20 @@
-import re
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
-from time import sleep
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 import pandas as pd
-from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
 
-from shopy import JSON, ExtractFilesInfo, GetName, ShellCommand, path_config
+import shopy as sp
+from shopy import ExtractFilesInfo, GetName, path_config
 
 
 class CalcCentrality:
-    def __init__(self):
-        self.shell_command = ShellCommand()
-        self.json = JSON()
-        self.git_command = GitCommand()
-        self.util_func = UtilFunc()
-
     def write_repo_metadata(
         self, input_dir: Path, start_date: str, end_date: str, output_dir: Path
     ) -> None:
@@ -32,7 +26,7 @@ class CalcCentrality:
             end_date (str): 収集の終了日
         """
         # リポジトリの月次データを取得
-        filtered_hashes, filtered_dates = self.git_command.get_monthly_commits(
+        filtered_hashes, filtered_dates = sp.get_monthly_commits(
             repo_path=input_dir,
             start_date=start_date,
             end_date=end_date,
@@ -89,7 +83,7 @@ class CalcCentrality:
             dict: ファイルの依存関係
         """
         # コミットハッシュの状態にリポジトリを戻す
-        self.git_command.reset_repo_state(
+        sp.reset_repo_state(
             repo_path=path_config.REPO_DIR,
             commit_hash=state,
         )
@@ -123,7 +117,7 @@ class CalcCentrality:
         }
 
         processed_file_dependency = {str(k): v for k, v in file_dependency.items()}
-        self.json.write_json(
+        sp.write_json(
             dict=processed_file_dependency,
             output_dir=output_dir,
         )
@@ -215,7 +209,7 @@ class CalcCentrality:
         # スコア名ごとの一時保存用辞書
         score_records: dict[str, list[pd.DataFrame]] = defaultdict(list)
 
-        for subdir in sorted(self.util_func.get_child_dir(input_dir)):
+        for subdir in sorted(sp.get_child_dir(input_dir)):
             try:
                 timestamp = pd.to_datetime(subdir, utc=True)
             except Exception:
@@ -284,6 +278,12 @@ class CalcCentrality:
             output_dir = output_base_dir / score_name
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            # === 軸範囲の計算 ===
+            all_x = df.columns
+            min_x, max_x = all_x.min(), all_x.max()
+
+            min_y, max_y = df.min().min(), 0.05
+
             for fqn in tqdm(
                 class_list,
                 desc=f"{score_name} をプロット中",
@@ -315,19 +315,22 @@ class CalcCentrality:
                 plt.ylabel(score_name, fontsize=12)
                 plt.xticks(rotation=45, fontsize=10)  # 目盛サイズ
                 plt.yticks(fontsize=10)
+                plt.yscale("log")  # Y軸を対数スケールに設定
+                plt.xlim(min_x, max_x)
+                plt.ylim(min_y, max_y)
                 plt.tight_layout()
 
-                safe_name = self.util_func.sanitize_filename(fqn)
+                safe_name = sp.sanitize_filename(fqn)
                 save_path = output_dir / f"{safe_name}.png"
                 plt.savefig(save_path)
                 plt.close()
 
     def main(self) -> None:
         # # 2024年の最終コミット日時にリポジトリを戻す
-        # last_commit_hash, _ = self.git_command.get_last_commit_date(
+        # last_commit_hash, _ = sp.get_last_commit_date(
         #     repo_path=path_config.REPO_DIR, limit_year="2025"
         # )
-        # self.git_command.reset_repo_state(
+        # sp.reset_repo_state(
         #     repo_path=path_config.REPO_DIR,
         #     commit_hash=last_commit_hash,
         # )
@@ -365,7 +368,7 @@ class CalcCentrality:
         # )
 
         # # 依存関係のjsonを読み込み
-        # file_dependency = self.json.read_json(
+        # file_dependency = sp.read_json(
         #     input_dir=(output_path / path_config.FILE_DEPENDENCY_JSON)
         # )
 
@@ -392,93 +395,6 @@ class CalcCentrality:
             centrality_dir=path_config.CENTRALITY_MATRIX_DIR,
             output_base_dir=path_config.CENTRALITY_CHANGE_DIR,
         )
-
-
-class GitCommand:
-    def __init__(self):
-        self.shell_command = ShellCommand()
-
-    def get_monthly_commits(
-        self,
-        repo_path: str,
-        branch: str = "main",
-        start_date: str = "2023-01-01",
-        end_date: str = "2024-12-31",
-    ) -> tuple[str, str]:
-        """
-        各月の最後のコミットのハッシュとUTCのISO形式日時を取得する
-
-        Returns:
-            dict[str, tuple[commit_hash, commit_date]]
-        """
-        start = datetime.strptime(start_date, "%Y-%m-%d")
-        end = datetime.strptime(end_date, "%Y-%m-%d")
-
-        monthly_commits: dict[str, tuple[str, str]] = {}
-        current = start
-
-        while current <= end:
-            next_month = current + relativedelta(months=1)
-            since = current.strftime("%Y-%m-%d")
-            until = (next_month - timedelta(days=1)).strftime("%Y-%m-%d")
-
-            cmd = (
-                f"git log {branch} "
-                f'--after="{since}" --before="{until}" '
-                f"--pretty=format:'%H|%aI' --reverse"
-            )
-
-            commits = self.shell_command.run_cmd(cmd, cwd=repo_path)
-            if commits:
-                last_commit_line = commits[-1]
-                if "|" in last_commit_line:
-                    commit_hash, commit_date = last_commit_line.split("|", 1)
-                    commit_date_utc = datetime.fromisoformat(commit_date).astimezone(
-                        timezone.utc
-                    )
-                    monthly_key = since[:7]
-                    monthly_commits[monthly_key] = (commit_hash, commit_date_utc)
-
-            current = next_month
-
-            sorted_months = sorted(monthly_commits.keys())
-            filtered_hashes = [monthly_commits[month][0] for month in sorted_months]
-            filtered_dates = [monthly_commits[month][1] for month in sorted_months]
-
-        return filtered_hashes, filtered_dates
-
-    def get_last_commit_date(self, repo_path: Path, limit_year: str) -> tuple[str, str]:
-        all_commits: list[str] = self.shell_command.run_cmd(
-            cmd=f"git log --before={limit_year}-01-01T00:00:00+00:00 --pretty=format:'%H|%aI' --reverse",
-            cwd=repo_path,
-        )
-        last_commit_hash: str = all_commits[-1].split("|")[0]
-        last_commit_date: str = all_commits[-1].split("|")[1]
-        return last_commit_hash, last_commit_date
-
-    def reset_repo_state(self, repo_path: Path, commit_hash: str) -> None:
-        self.shell_command.run_cmd(cmd=f"git reset --hard {commit_hash}", cwd=repo_path)
-        sleep(2)
-
-
-class UtilFunc:
-    def __init__(self):
-        pass
-
-    def get_child_dir(self, path: Path) -> list[Path]:
-        """指定したパスの子ディレクトリを取得する
-
-        Args:
-            path (Path): 対象のパス
-
-        Returns:
-            list[Path]: 子ディレクトリのリスト
-        """
-        return [p.name for p in path.iterdir() if p.is_dir()]
-
-    def sanitize_filename(self, name: str) -> str:
-        """ファイル名に使えない文字を安全な形式に変換"""
-        return re.sub(r'[\\/*?:"<>|]', "_", name)
 
 
 if __name__ == "__main__":

@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from shopy import ShellCommand, path_config
+import shopy as sp
+from shopy import path_config
 
 
 class ExtractFilesInfo:
     def __init__(self, repo_dir, projects_data_dir):
         self.repo_dir = repo_dir
         self.projects_data_dir = projects_data_dir
-        self.shell_command: ShellCommand = ShellCommand()
 
     def extract_deleted_file_info(self, cwd, language="java"):
         """削除されたファイルの情報を取得
@@ -24,7 +24,7 @@ class ExtractFilesInfo:
             DataFrame: 削除されたファイルの情報を含むDataFrame
         """
         # 削除されたファイルの情報を取得
-        lines = self.shell_command.run_cmd(
+        lines = sp.run_cmd(
             cmd="git log --diff-filter=D --name-status --pretty=format:'%H|%aI|%s'",
             cwd=cwd,
         )
@@ -60,7 +60,7 @@ class ExtractFilesInfo:
             DataFrame: 残存ファイルの情報を含むDataFrame
         """
         # 残存ファイルの情報を取得
-        lines = self.shell_command.run_cmd("git ls-tree -r --name-only HEAD", cwd=cwd)
+        lines = sp.run_cmd("git ls-tree -r --name-only HEAD", cwd=cwd)
         files_info: list = []
         for line in lines:
             if line.endswith(f".{language}"):
