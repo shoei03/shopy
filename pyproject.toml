@@ -18,9 +18,10 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
-addopts = "-v"
+addopts = "--cov=src/shopy --cov-report=term-missing -v"
